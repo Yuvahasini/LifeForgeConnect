@@ -100,26 +100,17 @@ def _generate_passport_id() -> str:
 
 @router.get("/donors")
 def get_milk_donors(
-    pincode: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
-    screening_status: Optional[str] = Query(None, description="Filter by screening status: cleared, pending"),
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
     limit: int = Query(50, le=100),
 ):
     """
     Powers the 'Active Donors' card grid on MilkBridge.tsx.
-    Returns donors with impact metrics, filtering by location and screening status.
     """
     query = supabase.table("milk_donors") \
-        .select("*, donors(id, name, city, pincode, is_verified, trust_score, lat, lng, mobile)") \
+        .select("*, donors(id, name, city, pincode, is_verified, trust_score, lat, lng)") \
         .eq("is_available", True)
-
-    if pincode:
-        query = query.eq("pincode", pincode)
-
-    if screening_status:
-        query = query.eq("screening_status", screening_status)
 
     res = _safe_execute(query.limit(200))
 
@@ -129,7 +120,7 @@ def get_milk_donors(
 
         # Filter by city if specified
         if city:
-            donor_city = (donor.get("city") or md.get("city") or "").lower()
+            donor_city = (donor.get("city") or "").lower()
             if city.lower() not in donor_city:
                 continue
 
@@ -154,42 +145,23 @@ def get_milk_donors(
         distance_km = None
         if lat and lng and donor.get("lat") and donor.get("lng"):
             distance_km = haversine(lat, lng, donor["lat"], donor["lng"])
-        elif lat and lng and md.get("lat") and md.get("lng"):
-            distance_km = haversine(lat, lng, md["lat"], md["lng"])
-
-        # Respect anonymity setting
-        display_name = donor.get("name", "Anonymous Donor")
-        display_area = md.get("city") or donor.get("city", "")
-        if md.get("is_anonymous"):
-            display_name = f"Donor #{str(md['id'])[:8]}"
-            display_area = display_area.split(",")[0] if display_area else "Undisclosed"
 
         results.append({
             "id":              md["id"],
             "donor_id":        md.get("donor_id"),
-            "name":            display_name,
+            "name":            donor.get("name", "Anonymous Donor"),
             "babyAge":         f"{age_m} months" if age_m is not None else "",
             "qty":             f"{qty}ml/day" if qty else "",
-            "area":            display_area,
-            "pincode":         md.get("pincode") or donor.get("pincode", ""),
+            "area":            donor.get("city", ""),
             "verified":        donor.get("is_verified", False),
-            "screening_status": md.get("screening_status", "pending"),
-            "is_screened":     md.get("screening_status") == "cleared",
             "impact":          impact_label,
             "trust_score":     donor.get("trust_score", 50),
             "distance_km":     distance_km,
             "distance":        f"{distance_km:.1f} km" if distance_km is not None else "",
-            "is_anonymous":    md.get("is_anonymous", False),
-            "availability_start": md.get("availability_start"),
-            "availability_end":   md.get("availability_end"),
         })
 
-    # Sort by screening status (cleared first), then trust score
-    results.sort(key=lambda x: (
-        0 if x["is_screened"] else 1,
-        -x["trust_score"],
-        x["distance_km"] if x["distance_km"] is not None else 9999
-    ))
+    # Sort by trust score
+    results.sort(key=lambda x: -x["trust_score"])
 
     return results[:limit]
 
@@ -547,29 +519,17 @@ class MilkRequestBody(BaseModel):
     hospital_id: str
     infant_name: Optional[str] = None
     daily_quantity_ml: int = Field(..., ge=50, le=5000, description="Daily ML needed (50-5000)")
-    volume_needed_ml: Optional[int] = None
-    urgency: str = Field(default="normal", pattern="^(critical|urgent|normal)$")
-    pincode: Optional[str] = None
-
-    @validator("pincode")
-    def validate_pincode(cls, v):
-        if v and len(v) != 6:
-            raise ValueError("Pincode must be 6 digits")
-        if v and not v.isdigit():
-            raise ValueError("Pincode must contain only digits")
-        return v
 
 
 @router.post("/requests")
 def post_milk_request(body: MilkRequestBody):
     """
     Hospital posts a milk shortage request.
-    Validates hospital ID and notifies nearby screened donors.
     """
     # Validate hospital_id exists
     try:
         hosp = supabase.table("hospitals") \
-            .select("id, name, city, pincode, lat, lng") \
+            .select("id, name, city, lat, lng") \
             .eq("id", body.hospital_id) \
             .single() \
             .execute()
@@ -585,19 +545,13 @@ def post_milk_request(body: MilkRequestBody):
     hosp_data = hosp.data
     hosp_name = hosp_data["name"]
     hosp_city = hosp_data.get("city", "")
-    hosp_pincode = body.pincode or hosp_data.get("pincode", "")
 
-    # Create the request
+    # Create the request (use only existing columns)
     request_data = {
         "hospital_id":       body.hospital_id,
         "infant_name":       body.infant_name,
         "daily_quantity_ml": body.daily_quantity_ml,
-        "volume_needed_ml":  body.volume_needed_ml or body.daily_quantity_ml,
         "status":            "open",
-        "urgency":           body.urgency,
-        "pincode":           hosp_pincode,
-        "lat":               hosp_data.get("lat"),
-        "lng":               hosp_data.get("lng"),
     }
 
     try:
@@ -611,11 +565,10 @@ def post_milk_request(body: MilkRequestBody):
 
     request_id = res.data[0]["id"]
 
-    # Find and notify nearby screened donors
+    # Find and notify all available donors
     donors_res = supabase.table("milk_donors") \
-        .select("*, donors(id, name, mobile, lat, lng)") \
+        .select("*, donors(id, name, mobile)") \
         .eq("is_available", True) \
-        .eq("screening_status", "cleared") \
         .execute()
 
     alerted_mobiles = []
@@ -626,20 +579,6 @@ def post_milk_request(body: MilkRequestBody):
         donor_id = donor.get("id")
 
         if not donor_id:
-            continue
-
-        # Check proximity (within 50km or same pincode)
-        should_notify = False
-        donor_pincode = md.get("pincode") or ""
-
-        if hosp_pincode and donor_pincode and hosp_pincode == donor_pincode:
-            should_notify = True
-        elif hosp_data.get("lat") and hosp_data.get("lng") and donor.get("lat") and donor.get("lng"):
-            dist = haversine(hosp_data["lat"], hosp_data["lng"], donor["lat"], donor["lng"])
-            if dist <= 50:
-                should_notify = True
-
-        if not should_notify:
             continue
 
         # Create in-app notification
@@ -661,11 +600,11 @@ def post_milk_request(body: MilkRequestBody):
     )
     sms_count = alert_donors(alerted_mobiles[:5], sms_msg)
 
-    # Notify the hospital that request was posted
+    # Notify the hospital
     _create_notification(
         user_id=body.hospital_id,
         title="Milk request posted",
-        message=f"Your request for {body.daily_quantity_ml}ml/day has been broadcast to {notified_count} verified donors.",
+        message=f"Your request for {body.daily_quantity_ml}ml/day has been broadcast to {notified_count} donors.",
         notif_type="milk_response",
     )
 
@@ -674,7 +613,7 @@ def post_milk_request(body: MilkRequestBody):
         "request_id":     request_id,
         "donors_notified": notified_count,
         "sms_sent":       sms_count,
-        "message":        f"Shortage alert posted. {notified_count} screened donor(s) notified, {sms_count} SMS sent.",
+        "message":        f"Shortage alert posted. {notified_count} donor(s) notified.",
     }
 
 
