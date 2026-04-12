@@ -108,13 +108,38 @@ export interface BloodShortage {
 
 export interface ThalPatient {
     id: string; name: string; age: number | null; group: string;
-    hospital: string; freq: string; nextDate: string;
-    donor: string; countdown: string; days_until: number | null; is_urgent: boolean;
+    hospital: string; hospital_id: string; freq: string; nextDate: string;
+    donor: string; donor_status: string | null;
+    current_match_id: string | null; current_donor_id: string | null;
+    countdown: string; days_until: number | null; is_urgent: boolean;
+    is_critical: boolean; needs_match_now: boolean;
+    past_donor_ids: string[];
 }
 
 export interface CalendarDay {
     day: string; date: string; has: boolean;
     label: string | null; patients: string[];
+}
+
+export interface ThalAssignment {
+    match_id: string; patient_id: string; patient_name: string;
+    blood_group: string; next_transfusion: string; days_until: number | null;
+    countdown: string; frequency: string; hospital: string;
+    status: string; assigned_at: string; is_urgent: boolean;
+}
+
+export interface ThalPatientHistory {
+    patient_id: string; patient_name: string; blood_group: string;
+    frequency: number; total: number;
+    history: Array<{
+        match_id: string; donor_name: string; donor_group: string;
+        donor_city: string; status: string; date: string;
+    }>;
+}
+
+export interface ThalDashboardStats {
+    due_today: number; due_this_week: number;
+    overdue: number; unmatched: number; total_active: number;
 }
 
 export interface PlateletRequest {
@@ -339,11 +364,26 @@ export const api = {
         getCalendar: (daysAhead = 7) =>
             get<CalendarDay[]>("/thal/calendar", { days_ahead: daysAhead }),
 
-        registerPatient: (body: { name: string; blood_group: string; hospital_id: string; transfusion_frequency_days?: number; last_transfusion_date?: string }) =>
+        registerPatient: (body: { name: string; blood_group: string; hospital_id?: string; transfusion_frequency_days?: number; last_transfusion_date?: string }) =>
             post("/thal/patients", body),
 
         markDone: (patientId: string, transfusionDate: string) =>
             post("/thal/transfusion-done", { patient_id: patientId, transfusion_date: transfusionDate }),
+
+        assignDonor: (body: { patient_id: string; donor_id: string }) =>
+            post<{ success: boolean; match_id: string; message: string }>("/thal/assign-donor", body),
+
+        getDonorAssignments: (donorId: string) =>
+            get<ThalAssignment[]>(`/thal/donor/${donorId}/assignments`),
+
+        respond: (body: { match_id: string; donor_id: string; action: "accept" | "decline" }) =>
+            post<{ success: boolean; status: string; message: string }>("/thal/respond", body),
+
+        getPatientHistory: (patientId: string) =>
+            get<ThalPatientHistory>(`/thal/patients/${patientId}/history`),
+
+        getDashboard: (hospitalId?: string) =>
+            get<ThalDashboardStats>("/thal/dashboard", hospitalId ? { hospital_id: hospitalId } : undefined),
     },
 
 
