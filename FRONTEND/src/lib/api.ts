@@ -499,6 +499,17 @@ export const api = {
         respondToMatch: (matchId: string, body: { donor_id: string; status: "accepted" | "declined" }) =>
             post<{ success: boolean; status: string; message: string }>(`/milk/matches/${matchId}/respond`, body),
 
+        // Get matches for a donor (to show pending/active matches)
+        getDonorMatches: (donorId: string) =>
+            get<any[]>(`/milk/matches/donor/${donorId}`),
+
+        // Update match status (for hospital workflow: accepted -> pickup_scheduled -> collected -> delivered)
+        updateMatchStatus: (matchId: string, body: {
+            status: string;
+            pickup_date?: string;
+            pickup_time?: string;
+        }) => patch<{ success: boolean; message: string }>(`/milk/matches/${matchId}`, body),
+
         // Donation tracking (Milk Passport)
         createDonation: (body: {
             donor_id: string;
