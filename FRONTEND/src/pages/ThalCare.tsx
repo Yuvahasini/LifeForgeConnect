@@ -1009,8 +1009,17 @@ export default function ThalCare() {
                           <div className="font-display font-bold text-blood text-sm">{p.group}</div>
                         </div>
                         <div>
-                          <div className="font-body text-xs text-muted-foreground">Frequency</div>
-                          <div className="font-body font-semibold text-xs text-foreground">{p.freq}</div>
+                          <div className="font-body text-xs text-muted-foreground flex items-center gap-1">
+                            Frequency
+                            {p.prediction?.method === "adaptive" && (
+                              <span className="text-[10px] text-thal bg-thal/10 px-1.5 py-0.5 rounded-md flex items-center" title={`AI Predicted: ${p.prediction.predicted_days} days\nConfidence: ${Math.round(p.prediction.confidence * 100)}%\nTrend: ${p.prediction.trend_detail}`}>
+                                <Activity className="w-3 h-3 mr-1" /> Auto
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-body font-semibold text-xs text-foreground">
+                            {p.prediction?.method === "adaptive" ? `~Every ${p.prediction.predicted_days} days` : p.freq}
+                          </div>
                         </div>
                         <div>
                           <div className="font-body text-xs text-muted-foreground">Dedicated Donor</div>
@@ -1019,9 +1028,13 @@ export default function ThalCare() {
                       </div>
 
                       {/* Next date */}
-                      <div className="mt-3 font-body text-xs text-muted-foreground">
-                        Next transfusion:{" "}
-                        <span className="text-foreground font-semibold">{p.nextDate}</span>
+                      <div className="mt-3 font-body text-xs text-muted-foreground flex items-center gap-2">
+                        <span>Next transfusion: <span className="text-foreground font-semibold">{p.nextDate}</span></span>
+                        {p.prediction?.method === "adaptive" && (
+                          <Badge className="bg-thal/10 text-thal font-body text-[10px] border-0">
+                            {Math.round(p.prediction.confidence * 100)}% Confidence
+                          </Badge>
+                        )}
                       </div>
 
                       {/* Action buttons */}

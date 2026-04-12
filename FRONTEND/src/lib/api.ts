@@ -114,6 +114,13 @@ export interface ThalPatient {
     countdown: string; days_until: number | null; is_urgent: boolean;
     is_critical: boolean; needs_match_now: boolean;
     past_donor_ids: string[];
+    prediction?: {
+        method: "adaptive" | "fallback";
+        predicted_days: number;
+        confidence: number;
+        trend: string;
+        trend_detail: string;
+    };
 }
 
 export interface CalendarDay {

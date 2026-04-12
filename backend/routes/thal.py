@@ -785,3 +785,107 @@ def _calc_age(dob: Optional[str]) -> Optional[int]:
         return (date.today() - d).days // 365
     except Exception:
         return None
+
+
+def _collect_transfusion_dates(patient_id: str) -> list[str]:
+    """
+    Reconstruct approximate past transfusion dates from the matches table.
+    Each fulfilled match represents a completed transfusion cycle.
+    Also includes the patient's last_transfusion_date from the table.
+    """
+    dates = []
+
+    # Get patient's recorded last transfusion
+    patient_res = supabase.table("thal_patients") \
+        .select("last_transfusion_date, transfusion_frequency_days") \
+        .eq("id", patient_id) \
+        .single() \
+        .execute()
+
+    if patient_res.data:
+        last = patient_res.data.get("last_transfusion_date")
+        if last:
+            dates.append(str(last)[:10])
+
+    # Get all fulfilled match dates (these are recorded transfusion events)
+    matches_res = supabase.table("matches") \
+        .select("created_at") \
+        .eq("request_id", patient_id) \
+        .eq("module", "thal") \
+        .eq("status", "fulfilled") \
+        .order("created_at", desc=False) \
+        .execute()
+
+    for m in (matches_res.data or []):
+        if m.get("created_at"):
+            dates.append(str(m["created_at"])[:10])
+
+    # De-duplicate and sort
+    dates = sorted(set(dates))
+    return dates
+
+
+def _get_prediction_for_patient(patient_id: str, configured_freq: int) -> dict:
+    """Build prediction info for a patient card (lightweight)."""
+    try:
+        past_dates = _collect_transfusion_dates(patient_id)
+        if len(past_dates) < 2:
+            return {
+                "method": "fallback",
+                "predicted_days": configured_freq,
+                "confidence": 0.0,
+                "trend": "stable",
+                "trend_detail": "Not enough history for adaptive prediction.",
+            }
+        prediction = predict_next_interval(past_dates, configured_freq)
+        return {
+            "method":         prediction["method"],
+            "predicted_days": prediction["predicted_days"],
+            "confidence":     prediction["confidence"],
+            "trend":          prediction["trend"],
+            "trend_detail":   prediction["trend_detail"],
+        }
+    except Exception as e:
+        print(f"[thal._get_prediction] Error for {patient_id}: {e}")
+        return {
+            "method": "fallback",
+            "predicted_days": configured_freq,
+            "confidence": 0.0,
+            "trend": "stable",
+            "trend_detail": "Prediction error — using configured frequency.",
+        }
+
+
+# ── GET /thal/patients/{patient_id}/prediction ────────────────────────────────
+
+@router.get("/patients/{patient_id}/prediction")
+def get_patient_prediction(patient_id: str):
+    """
+    Returns full adaptive prediction details for a specific patient.
+    Shows the model's analysis: intervals, trend, confidence, predicted days.
+    """
+    patient_res = supabase.table("thal_patients") \
+        .select("name, blood_group, transfusion_frequency_days, last_transfusion_date, next_transfusion_date") \
+        .eq("id", patient_id) \
+        .single() \
+        .execute()
+
+    if not patient_res.data:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient = patient_res.data
+    freq = patient["transfusion_frequency_days"] or 21
+
+    past_dates = _collect_transfusion_dates(patient_id)
+    prediction = predict_next_interval(past_dates, freq)
+
+    return {
+        "patient_id":     patient_id,
+        "patient_name":   patient["name"],
+        "blood_group":    patient["blood_group"],
+        "configured_freq": freq,
+        "current_next":   patient.get("next_transfusion_date"),
+        "last_transfusion": patient.get("last_transfusion_date"),
+        "data_points":    len(past_dates),
+        "prediction":     prediction,
+    }
