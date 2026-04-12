@@ -259,7 +259,7 @@ class MatchUpdateBody(BaseModel):
     donor_id: str
 
 
-@router.patch("/matches/{match_id}")
+@router.api_route("/matches/{match_id}", methods=["PATCH", "PUT"])
 def update_platelet_match(match_id: str, body: MatchUpdateBody):
     if body.status not in ("accepted", "declined", "completed"):
         raise HTTPException(status_code=422, detail="Invalid status.")
