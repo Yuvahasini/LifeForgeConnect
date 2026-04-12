@@ -226,7 +226,24 @@ class PlateletMatchBody(BaseModel):
 @router.post("/matches")
 def create_platelet_match(body: PlateletMatchBody):
     """Donor clicks 'Donate' — creates a pending match."""
-    # Check not already matched
+    # ── 1. Donor Eligibility Check ──
+    # Platelet (apheresis) donation usually requires a 14-day gap.
+    donor = supabase.table("donors") \
+        .select("last_donation_date") \
+        .eq("id", body.donor_id) \
+        .single() \
+        .execute()
+    
+    if donor.data and donor.data.get("last_donation_date"):
+        last_date = date.fromisoformat(donor.data["last_donation_date"])
+        days_gap = (date.today() - last_date).days
+        if days_gap < 14:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Safety Lockout: You donated {days_gap} days ago. Please wait {14 - days_gap} more days before donating platelets."
+            )
+
+    # ── 2. Check not already matched ──
     existing = supabase.table("platelet_matches") \
         .select("id, status") \
         .eq("request_id", body.request_id) \
@@ -235,10 +252,10 @@ def create_platelet_match(body: PlateletMatchBody):
 
     if existing.data:
         status = existing.data[0]["status"]
-        if status == "accepted":
-            raise HTTPException(status_code=409, detail="You have already accepted this request.")
+        if status in ("accepted", "confirmed", "completed"):
+            raise HTTPException(status_code=409, detail=f"You already have an active match for this request (Status: {status}).")
         if status == "pending":
-            raise HTTPException(status_code=409, detail="You already have a pending match for this request.")
+            raise HTTPException(status_code=409, detail="You already have a pending intent for this request.")
 
     res = supabase.table("platelet_matches").insert({
         "request_id": body.request_id,
@@ -249,7 +266,7 @@ def create_platelet_match(body: PlateletMatchBody):
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create match")
 
-    return {"success": True, "match_id": res.data[0]["id"], "message": "Your donation intent has been recorded. The hospital will confirm shortly."}
+    return {"success": True, "match_id": res.data[0]["id"], "message": "Your donation intent has been recorded. The hospital will review and coordinate shortly."}
 
 
 # ── PATCH /platelet/matches/{match_id} ── Donor accepts or declines ───────────
@@ -261,24 +278,63 @@ class MatchUpdateBody(BaseModel):
 
 @router.api_route("/matches/{match_id}", methods=["PATCH", "PUT"])
 def update_platelet_match(match_id: str, body: MatchUpdateBody):
-    if body.status not in ("accepted", "declined", "completed"):
-        raise HTTPException(status_code=422, detail="Invalid status.")
+    """
+    State Machine:
+    - Donor: pending -> accepted | declined
+    - Hospital: accepted -> confirmed
+    - Hospital: confirmed -> completed
+    """
+    # Standardize status to lower case and strip whitespace
+    status = body.status.strip().lower()
+    
+    allowed = ("accepted", "declined", "confirmed", "completed", "cancelled")
+    if status not in allowed:
+        raise HTTPException(status_code=422, detail=f"Invalid status requested: '{status}'. Expected one of {allowed}")
 
-    # Verify ownership
-    match = supabase.table("platelet_matches") \
-        .select("id, donor_id") \
+    # 1. Fetch match and request info
+    match_res = supabase.table("platelet_matches") \
+        .select("*, platelet_requests(hospital_id)") \
         .eq("id", match_id) \
+        .single() \
         .execute()
 
-    if not match.data:
+    if not match_res.data:
         raise HTTPException(status_code=404, detail="Match not found.")
-    if match.data[0]["donor_id"] != body.donor_id:
-        raise HTTPException(status_code=403, detail="Not your match.")
+    
+    match_data = match_res.data
+    request_data = match_data.get("platelet_requests") or {}
+    hospital_id = request_data.get("hospital_id")
+    current_status = match_data["status"]
 
+    # 2. Permission Check
+    # Statuses updated by donor
+    if body.status in ("accepted", "declined"):
+        if match_data["donor_id"] != body.donor_id:
+            raise HTTPException(status_code=403, detail="Only the donor can accept/decline.")
+    
+    # Statuses updated by hospital (Can confirm if pending or accepted)
+    if body.status in ("confirmed", "completed"):
+        if body.donor_id != hospital_id:
+             raise HTTPException(status_code=403, detail="Only the requesting hospital can confirm/complete.")
+
+    # 3. Update Match
     supabase.table("platelet_matches").update({
         "status":       body.status,
         "responded_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", match_id).execute()
+
+    # 4. Lifecycle Logic: If completed, close the request
+    if body.status == "completed":
+        supabase.table("platelet_requests") \
+            .update({"status": "closed"}) \
+            .eq("id", match_data["request_id"]) \
+            .execute()
+        
+        # Also update donor's last_donation_date
+        supabase.table("donors") \
+            .update({"last_donation_date": date.today().isoformat()}) \
+            .eq("id", match_data["donor_id"]) \
+            .execute()
 
     return {"success": True, "status": body.status}
 
