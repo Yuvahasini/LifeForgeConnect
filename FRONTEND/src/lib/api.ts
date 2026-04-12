@@ -261,14 +261,37 @@ export const api = {
         getOpenRequests: () =>
             get<BloodRequest[]>("/blood/requests/open"),
 
-        postRequest: (body: { hospital_id: string; blood_group: string; units: number; urgency: string; donor_id?: string; lat?: number; lng?: number }) =>
+        /** Verified hospital posts a general broadcast request */
+        postRequest: (body: { hospital_id: string; blood_group: string; units: number; urgency: string; notes?: string }) =>
             post("/blood/requests", body),
 
+        /** Hospital targets a specific verified donor */
         requestDonor: (body: { hospital_id: string; donor_id: string; blood_group: string; units: number; urgency: string }) =>
             post("/blood/donors/request", body),
 
+        /** Donor accepts or declines a request — pending → accepted | declined */
+        respondToRequest: (body: { request_id: string; donor_id: string; action: "accept" | "decline" }) =>
+            post("/blood/respond", body),
+
+        /** Donor sees compatible open requests (verified donors only) */
         getRequestsForDonor: (donorId: string) =>
             get<BloodRequest[]>("/blood/requests/for-donor", { donor_id: donorId }),
+
+        /** Hospital request management table */
+        getHospitalRequests: (hospitalId: string) =>
+            get("/blood/requests/hospital", { hospital_id: hospitalId }),
+
+        /** Donor history: received / accepted / declined / fulfilled */
+        getDonorHistory: (donorId: string) =>
+            get("/blood/history/donor", { donor_id: donorId }),
+
+        /** Hospital marks a request fulfilled */
+        fulfillRequest: (requestId: string, hospitalId: string) =>
+            req("POST", `/blood/requests/${requestId}/fulfill`, undefined, { hospital_id: hospitalId }),
+
+        /** Hospital manually closes a request */
+        closeRequest: (requestId: string, hospitalId: string) =>
+            req("POST", `/blood/requests/${requestId}/close`, undefined, { hospital_id: hospitalId }),
 
         getShortage: () =>
             get<BloodShortage[]>("/blood/shortage"),
