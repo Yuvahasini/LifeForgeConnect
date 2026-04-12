@@ -64,6 +64,24 @@ function DonorRegister() {
     }
     setLoading(true);
     try {
+      // Auto-geocode city to lat/lng using OpenStreetMap Nominatim
+      let lat: number | undefined;
+      let lng: number | undefined;
+      try {
+        const geoQuery = pincode ? pincode : city + ", India";
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(geoQuery)}&format=json&limit=1`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        const geoData = await geoRes.json();
+        if (geoData && geoData[0]) {
+          lat = parseFloat(geoData[0].lat);
+          lng = parseFloat(geoData[0].lon);
+        }
+      } catch {
+        // geocoding failed — continue without coords
+      }
+
       await api.auth.registerDonor({
         first_name: firstName,
         last_name: lastName,
@@ -77,8 +95,12 @@ function DonorRegister() {
         donor_types: selected,
         email,
         password,
+        lat,
+        lng,
       });
-      login("donor", firstName || "Donor", undefined, { donor_types: selected });
+      // Immediately login to get session token + user_id into localStorage
+      const sessionData = await api.auth.login(email, password, "donor");
+      login("donor", firstName || "Donor", undefined, sessionData.profile || { donor_types: selected });
       navigate("/dashboard");
     } catch (e: any) {
       setError(e.message || "Registration failed");
@@ -426,7 +448,7 @@ function HospitalRegister() {
     }
     setLoading(true);
     try {
-      await api.auth.registerHospital({
+      const regData: any = await api.auth.registerHospital({
         name,
         reg_number: regNumber,
         license: license || undefined,
@@ -437,7 +459,9 @@ function HospitalRegister() {
         contact_email: contactEmail,
         password,
       });
-      login("hospital", name, orgType as any);
+      // Immediately login to get session token + user_id into localStorage
+      const sessionData = await api.auth.login(contactEmail, password, "hospital");
+      login("hospital", name, orgType as any, sessionData.profile || {});
       navigate("/dashboard");
     } catch (e: any) {
       setError(e.message || "Registration failed");
