@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from utils.db import supabase
+from utils.db import supabase, supabase_auth
 from utils.sms import send_sms
 
 router = APIRouter()
@@ -80,12 +80,27 @@ class OtpVerifyRequest(BaseModel):
 def register_donor(req: DonorRegisterRequest):
     """
     Called by Register.tsx (DonorRegister component) on step 3 submit.
-    1. Creates Supabase Auth user
-    2. Inserts donor profile row
+    1. Pre-check: block duplicate email registration (prevents ghost UUID bug)
+    2. Creates Supabase Auth user
+    3. Inserts donor profile row
     """
+    # 0. Pre-check: block if this email is already registered in donors table
+    try:
+        dup_check = supabase_auth.auth.admin.list_users()
+        for u in (dup_check or []):
+            if u.email and u.email.lower() == req.email.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail="This email is already registered. Please log in instead."
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[register_donor] Pre-check skipped: {e}")
+
     # 1. Create auth user
     try:
-        auth_res = supabase.auth.sign_up({
+        auth_res = supabase_auth.auth.sign_up({
             "email": req.email,
             "password": req.password,
         })
@@ -95,6 +110,18 @@ def register_donor(req: DonorRegisterRequest):
     user_id = auth_res.user.id if auth_res.user else None
     if not user_id:
         raise HTTPException(status_code=500, detail="Failed to create auth user")
+
+    # Guard: if donors row already exists for this user_id, skip insert
+    try:
+        existing = supabase.table("donors").select("id").eq("id", user_id).limit(1).execute()
+        if existing.data:
+            return {
+                "success": True,
+                "donor_id": user_id,
+                "message": "Donor profile already exists. Please log in.",
+            }
+    except Exception:
+        pass
 
     # 2. Insert donor profile
     try:
@@ -120,7 +147,7 @@ def register_donor(req: DonorRegisterRequest):
     except Exception as e:
         # Cleanup auth user if profile fails
         try:
-            supabase.auth.admin.delete_user(user_id)
+            supabase_auth.auth.admin.delete_user(user_id)
         except Exception as delete_err:
             print(f"[register_donor] Cleanup failed: {delete_err}")
         err_msg = str(e)
@@ -148,7 +175,7 @@ def register_hospital(req: HospitalRegisterRequest):
     """Called by Register.tsx (HospitalRegister component) on submit."""
     print(f"[register_hospital] Attempting to sign up {req.contact_email}")
     try:
-        auth_res = supabase.auth.sign_up({
+        auth_res = supabase_auth.auth.sign_up({
             "email": req.contact_email,
             "password": req.password,
         })
@@ -184,7 +211,7 @@ def register_hospital(req: HospitalRegisterRequest):
         print(f"[register_hospital] Profile insert failed: {e}")
         if user_id:
             try:
-                supabase.auth.admin.delete_user(user_id)
+                supabase_auth.auth.admin.delete_user(user_id)
                 print(f"[register_hospital] Cleaned up user {user_id}")
             except Exception as delete_err:
                 print(f"[register_hospital] Cleanup failed: {delete_err}")
@@ -214,7 +241,7 @@ def login(req: LoginRequest):
     Returns a session token the frontend stores in localStorage.
     """
     try:
-        res = supabase.auth.sign_in_with_password({
+        res = supabase_auth.auth.sign_in_with_password({
             "email": req.email,
             "password": req.password,
         })
