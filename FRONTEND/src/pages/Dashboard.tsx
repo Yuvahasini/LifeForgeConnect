@@ -22,8 +22,6 @@ const MODULE_CONFIG: Record<string, {
   blood: { key: "blood", label: "Blood Donation", emoji: "🩸", path: "/blood-bridge", color: "text-blood", bg: "bg-blood/10", border: "border-blood/30", gradient: "from-red-600 to-rose-700", description: "Match with patients who urgently need your blood type." },
   platelet: { key: "platelet", label: "Platelet Donation", emoji: "⏱️", path: "/platelet-alert", color: "text-platelet", bg: "bg-platelet/10", border: "border-platelet/30", gradient: "from-amber-500 to-orange-600", description: "5-day viability window. Cancer patients depend on you." },
   milk: { key: "milk", label: "Milk Donation", emoji: "🍼", path: "/milk-bridge", color: "text-milk", bg: "bg-milk/10", border: "border-milk/30", gradient: "from-pink-400 to-rose-500", description: "Donate breast milk to save premature infants in NICUs.", genderRestricted: "female" },
-  marrow: { key: "marrow", label: "Bone Marrow", emoji: "🧬", path: "/marrow-match", color: "text-marrow", bg: "bg-marrow/10", border: "border-marrow/30", gradient: "from-violet-600 to-purple-700", description: "HLA-compatible marrow donation — a second chance at life." },
-  organ: { key: "organ", label: "Organ Donation", emoji: "🫁", path: "/last-gift", color: "text-organ", bg: "bg-organ/10", border: "border-organ/30", gradient: "from-teal-500 to-emerald-600", description: "Pledge your organs and give recipients a life-saving gift." },
 };
 
 const mockHistory = [
@@ -131,8 +129,6 @@ function SimpleModulePanel({ modKey }: { modKey: string }) {
   if (!mod) return null;
   const tips: Record<string, string[]> = {
     milk: ["Pump or hand-express milk within 6 hours of feeding", "Store in sterile containers and keep refrigerated", "Milk bank will arrange pickup from your location"],
-    marrow: ["Marrow donation is a one-time process for a specific patient", "HLA typing takes 2–4 weeks — stay available", "Recovery time is typically 2–3 weeks"],
-    organ: ["Your pledge is documented — family will be informed", "Organs can save up to 8 lives after death", "You can update or revoke your pledge anytime"],
   };
   return (
     <div className={`rounded-2xl border-2 ${mod.border} bg-card overflow-hidden`}>
@@ -246,7 +242,7 @@ function DonorDashboard() {
           <motion.div key={activeModule} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
             {activeModule === "blood" && <BloodModulePanel />}
             {activeModule === "platelet" && <PlateletModulePanel />}
-            {(activeModule === "milk" || activeModule === "marrow" || activeModule === "organ") && <SimpleModulePanel modKey={activeModule} />}
+            {(activeModule === "milk") && <SimpleModulePanel modKey={activeModule} />}
           </motion.div>
         )}
       </AnimatePresence>
@@ -291,8 +287,6 @@ const HOSPITAL_MODULES = [
   { name: "BloodBridge", emoji: "🩸", tagline: "Blood donor matching", description: "Post urgent blood requests and match with verified donors in real time.", path: "/blood-bridge", accent: "border-blood/30 hover:border-blood", badge: "text-blood", icon_bg: "bg-blood/10" },
   { name: "ThalCare", emoji: "💉", tagline: "Thalassemia transfusions", description: "Manage recurring transfusion schedules and donor assignments for Thal patients.", path: "/thal-care", accent: "border-thal/30 hover:border-thal", badge: "text-thal", icon_bg: "bg-thal/10" },
   { name: "PlateletAlert", emoji: "⏱️", tagline: "Platelet expiry tracking", description: "Track platelet viability windows and match cancer patients with apheresis donors.", path: "/platelet-alert", accent: "border-platelet/30 hover:border-platelet", badge: "text-platelet", icon_bg: "bg-platelet/10" },
-  { name: "MarrowMatch", emoji: "🧬", tagline: "HLA bone marrow matching", description: "Find HLA-compatible bone marrow donors with precision scoring.", path: "/marrow-match", accent: "border-marrow/30 hover:border-marrow", badge: "text-marrow", icon_bg: "bg-marrow/10" },
-  { name: "LastGift", emoji: "🫁", tagline: "Organ donation & matching", description: "Manage organ recipient waitlists with viability timers and ranked matching.", path: "/last-gift", accent: "border-organ/30 hover:border-organ", badge: "text-organ", icon_bg: "bg-organ/10" },
   { name: "MilkBridge", emoji: "🍼", tagline: "Human milk bank", description: "Connect with lactating donors and manage milk bank inventory for NICUs.", path: "/milk-bridge", accent: "border-milk/30 hover:border-milk", badge: "text-milk", icon_bg: "bg-milk/10" },
 ];
 
@@ -302,7 +296,6 @@ function HospitalDashboard() {
   const [error, setError] = useState("");
   const [thalPatients, setThalPatients] = useState<any[]>([]);
   const [plateletReqs, setPlateletReqs] = useState<any[]>([]);
-  const [organRecips, setOrganRecips] = useState<any[]>([]);
   const [remLoading, setRemLoading] = useState(true);
   const hospitalId = getCurrentUserId();
   const navigate = useNavigate();
@@ -319,11 +312,9 @@ function HospitalDashboard() {
         const [thal, platelet, organ] = await Promise.allSettled([
           api.thal.getPatients(hospitalId || undefined),
           api.platelet.getOpenRequests({ user_id: hospitalId || undefined }),
-          api.organ.getRecipients(),
         ]);
         if (thal.status === "fulfilled") setThalPatients(thal.value.filter((p: any) => p.days_until !== null && p.days_until <= 7));
         if (platelet.status === "fulfilled") setPlateletReqs(platelet.value.filter((p: any) => p.days_left <= 2));
-        if (organ.status === "fulfilled") setOrganRecips(organ.value.slice(0, 3));
       } finally { setRemLoading(false); }
     };
     fetch();
@@ -333,7 +324,7 @@ function HospitalDashboard() {
   if (error) return <div className="rounded-xl border-2 border-dashed border-border bg-card p-8 text-center"><p className="font-body text-muted-foreground mb-4">{error}</p><Button variant="outline" onClick={() => window.location.reload()}>Retry</Button></div>;
 
   const h = data?.hospital; const stats = data?.stats;
-  const totalAlerts = thalPatients.length + plateletReqs.length + organRecips.length;
+  const totalAlerts = thalPatients.length + plateletReqs.length;
 
   return (
     <div className="space-y-8">
@@ -436,21 +427,7 @@ function HospitalDashboard() {
                   <Link to="/platelet-alert"><Button size="sm" className="bg-platelet/10 text-platelet hover:bg-platelet hover:text-white font-body font-semibold rounded-lg border border-platelet/30 shrink-0">Act Now</Button></Link>
                 </motion.div>
               ))}
-              {organRecips.map((r: any, i: number) => (
-                <motion.div key={r.id || i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: (thalPatients.length + plateletReqs.length + i) * 0.05 }}
-                  className="rounded-xl border-2 border-organ/30 bg-card p-4 flex items-center gap-4">
-                  <div className="w-11 h-11 rounded-xl bg-organ/10 flex items-center justify-center text-xl shrink-0">🫁</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-body font-bold text-sm">{r.name}</span>
-                      <Badge className="text-[10px] border-0 bg-organ/15 text-organ">WAITING · Urgency {r.urgency}/10</Badge>
-                    </div>
-                    <div className="font-body text-xs text-muted-foreground mt-0.5">🫁 LastGift · Needs: <strong>{r.organ}</strong> · Blood: {r.blood} · Waiting: {r.wait}</div>
-                    <div className="font-body text-xs text-muted-foreground mt-0.5">{r.hospital}{r.hospital_city ? `, ${r.hospital_city}` : ""}</div>
-                  </div>
-                  <Link to="/last-gift"><Button size="sm" className="bg-organ/10 text-organ hover:bg-organ hover:text-white font-body font-semibold rounded-lg border border-organ/30 shrink-0">View</Button></Link>
-                </motion.div>
-              ))}
+
             </div>
           )}
       </div>
