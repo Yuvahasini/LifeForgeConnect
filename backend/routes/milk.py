@@ -908,6 +908,119 @@ def respond_to_milk_match(match_id: str, body: MilkMatchResponseBody):
     }
 
 
+@router.get("/matches/donor/{donor_id}")
+def get_donor_matches(donor_id: str):
+    """Get all matches for a specific donor (for donor's view)."""
+    try:
+        res = supabase.table("milk_matches") \
+            .select("*, milk_requests(hospital_id, daily_quantity_ml, urgency, hospitals(name, city))") \
+            .eq("donor_id", donor_id) \
+            .order("created_at", desc=True) \
+            .limit(20) \
+            .execute()
+    except Exception as e:
+        logger.error(f"Error fetching donor matches: {e}")
+        return []
+
+    results = []
+    for m in (res.data or []):
+        request = m.get("milk_requests") or {}
+        hospital = request.get("hospitals") or {}
+
+        results.append({
+            "id": m["id"],
+            "request_id": m.get("request_id"),
+            "hospital_name": hospital.get("name", "Unknown Hospital"),
+            "hospital_city": hospital.get("city", ""),
+            "volume_ml": request.get("daily_quantity_ml"),
+            "urgency": (request.get("urgency") or "normal").upper(),
+            "status": m.get("status"),
+            "pickup_date": m.get("pickup_date"),
+            "pickup_time": m.get("pickup_time"),
+            "created_at": m.get("created_at"),
+            "responded_at": m.get("responded_at"),
+        })
+
+    return results
+
+
+class MilkMatchUpdateBody(BaseModel):
+    status: str
+    pickup_date: Optional[str] = None
+    pickup_time: Optional[str] = None
+
+
+@router.patch("/matches/{match_id}")
+def update_milk_match_status(match_id: str, body: MilkMatchUpdateBody):
+    """
+    Update match status (for hospital workflow).
+    Status flow: pending -> accepted -> pickup_scheduled -> collected -> delivered
+    """
+    # Get current match
+    match_res = supabase.table("milk_matches") \
+        .select("*, milk_requests(hospital_id), donors(id, name, mobile)") \
+        .eq("id", match_id) \
+        .single() \
+        .execute()
+
+    if not match_res.data:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    match = match_res.data
+    donor = match.get("donors") or {}
+    request = match.get("milk_requests") or {}
+
+    # Build update data
+    update_data = {"status": body.status}
+    if body.pickup_date:
+        update_data["pickup_date"] = body.pickup_date
+    if body.pickup_time:
+        update_data["pickup_time"] = body.pickup_time
+
+    # Update the match
+    supabase.table("milk_matches").update(update_data).eq("id", match_id).execute()
+
+    # Create notifications based on status change
+    donor_id = match.get("donor_id")
+    if donor_id:
+        if body.status == "pickup_scheduled":
+            pickup_info = f"{body.pickup_date}"
+            if body.pickup_time:
+                pickup_info += f" at {body.pickup_time}"
+            _create_notification(
+                user_id=donor_id,
+                title="Pickup Scheduled!",
+                message=f"Your milk donation pickup is scheduled for {pickup_info}. Please keep the milk refrigerated.",
+                notif_type="milk_pickup",
+            )
+            # Also try to send SMS
+            if donor.get("mobile"):
+                try:
+                    from utils.sms import send_sms
+                    send_sms(donor["mobile"], f"LifeForge: Your milk donation pickup is scheduled for {pickup_info}. Thank you!")
+                except Exception:
+                    pass
+        elif body.status == "collected":
+            _create_notification(
+                user_id=donor_id,
+                title="Donation Collected",
+                message="Your milk donation has been collected. Thank you for helping save lives!",
+                notif_type="milk_collected",
+            )
+        elif body.status == "delivered":
+            _create_notification(
+                user_id=donor_id,
+                title="Donation Delivered!",
+                message="Your milk donation has reached the NICU. A baby is being nourished because of you!",
+                notif_type="milk_delivered",
+            )
+
+    return {
+        "success": True,
+        "message": f"Match status updated to {body.status}",
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # POST ENDPOINTS - Donation Tracking (Milk Passport)
 # ══════════════════════════════════════════════════════════════════════════════
