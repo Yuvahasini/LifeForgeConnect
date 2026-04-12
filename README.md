@@ -3,8 +3,8 @@
 ```
 ██╗     ██╗███████╗███████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
 ██║     ██║██╔════╝██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-██║     ██║█████╗  █████╗  █████╗  ██║   ██║██████╔╝██║  ███╗█████╗  
-██║     ██║██╔══╝  ██╔══╝  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  
+██║     ██║█████╗  █████╗  █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+██║     ██║██╔══╝  ██╔══╝  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
 ███████╗██║██║     ███████╗██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
 ╚══════╝╚═╝╚═╝     ╚══════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
                         C O N N E C T
@@ -14,210 +14,357 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-red.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
-[![Built with AI/ML](https://img.shields.io/badge/Powered%20by-AI%2FML-blueviolet)](https://github.com)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com)
+[![React](https://img.shields.io/badge/React-18-blue)](https://react.dev)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Python-green)](https://fastapi.tiangolo.com)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-darkgreen)](https://supabase.com)
 
 </div>
 
 ---
 
-## 💔 The Crisis No One Is Talking About
+## The Problem
 
-> Every urgent match matters when blood, platelet, thalassemia, or donor milk support exists — just not where the patient needs it.
+India faces critical healthcare coordination failures:
 
-India faces one of the world's most devastating healthcare coordination failures. The numbers are not statistics. They are people.
+| Crisis | Scale |
+|--------|-------|
+| Blood units needed annually | **5 crore** (50 million) |
+| Premature babies needing donor milk | **27 million/year** |
+| Thalassemia patients requiring transfusions | **1 lakh+** |
+| Organ transplant waitlist | **5 lakh+** patients |
 
-| The Problem | The Scale |
-|-------------|-----------|
-| 🩸 Thalassemia & cancer patients without compatible donors | **Millions** |
-| 👶 Premature babies born annually needing donor breast milk | **27 million** |
-| 📉 Mortality reduction with donor breast milk | **58% lower** — if only they could access it |
+**Donors exist. Patients exist. The bridge doesn't.**
 
-The tragedy? **Donors exist. Patients exist. The bridge doesn't.**
-
-Donation and care coordination in India are fragmented across siloed hospital databases, disconnected NGOs, desperate WhatsApp forwards, and outdated paper registries. When someone needs rare blood, platelets, thalassemia transfusion support, or donor milk, no system connects them in time. The critical window passes. Patients are left waiting.
-
-**LifeForge Connect is built to end this.**
+LifeForge Connect is built to end this.
 
 ---
 
-## 🧬 What Is LifeForge Connect?
+## What is LifeForge Connect?
 
-**LifeForge Connect** is a unified, AI-powered donor-patient matching ecosystem focused on four life-saving pathways: **BloodBridge**, **PlateletAlert**, **ThalCare**, and **MilkBridge**.
+A unified donor-patient matching platform with **5 specialized modules**:
 
-We don't just match donors to patients. We **predict shortages before they happen**, **calculate transport viability within golden hour windows**, and **proactively build donor pipelines** so no patient ever hits a dead end.
-
-```
-BloodBridge  ·  PlateletAlert  ·  ThalCare  ·  MilkBridge
-                              ↓
-                    [ LifeForge Connect ]
-                              ↓
-              Intelligent Match · Verified Fast · Lives Saved
-```
+| Module | Purpose | Status |
+|--------|---------|--------|
+| **BloodBridge** | Blood donation matching with urgency tiers | Active |
+| **PlateletAlert** | Platelet donation for cancer/dengue patients | Active |
+| **MilkBridge** | Breast milk donation for NICU babies | Active |
+| **ThalCare** | Thalassemia transfusion support network | Active |
+| **LifeForge AI** | AI assistant for donor guidance | Active |
 
 ---
 
-## 🚀 Core Features
-
-### 🤖 AI-Powered Predictive Matching Engine
-Our ML model doesn't wait for a crisis — it **predicts blood and platelet shortages** up to 72 hours in advance using hospital consumption patterns, local event data, seasonal trends, and historical demand signals. Shortages are prevented, not reacted to.
-
-### ⚡ Real-Time Compatibility Scoring
-Multi-parameter matching across blood type, geographical proximity, donor health history, recurring transfusion needs, and recipient urgency level — returning ranked compatible donors **in under 3 seconds**.
-
-### 📊 Live Shortage Intelligence Dashboard
-A public-facing, real-time heatmap of donation demand and supply across Indian cities — giving hospitals, NGOs, and health authorities actionable intelligence to mobilize faster.
-
-### 🍼 Human Milk Bank Network (India's First at Scale)
-A dedicated sub-platform connecting lactating donors with verified NICU units and premature babies in need. Includes cold chain logistics tracking, pasteurization compliance records, and nutritional profiling — giving every premature baby a fighting chance.
-
-### 🔒 Verified Donor Identity & Health Records
-Blockchain-anchored donor health credentials with Aadhaar-linked verification ensure every donor record is authentic, tamper-proof, and instantly accessible to authorized medical staff.
-
-### 📱 Multilingual Mobile-First Access
-Accessible in 10+ Indian languages. Works on low-bandwidth connections. USSD fallback for feature phones — because the next donor might not have a smartphone.
-
----
-
-## 🏗️ Tech Stack
+## Tech Stack
 
 ```
-Frontend          →  React.js / Next.js · Tailwind CSS · Vite
-Backend           →  Node.js · FastAPI (Python)
-AI/ML Engine      →  Python · scikit-learn · TensorFlow · NLP for donor intake
-Database          →  PostgreSQL · Redis (real-time) · MongoDB (unstructured records)
-Blockchain        →  Hyperledger Fabric (donor credential verification)
-Maps & Logistics  →  Google Maps Platform · OSRM (transport routing)
-Notifications     →  Firebase Cloud Messaging · Twilio (SMS/WhatsApp)
-Auth              →  Aadhaar API · OAuth 2.0
-Hosting           →  AWS / Azure (HIPAA-aligned infrastructure)
+┌─────────────────────────────────────────────────────────────┐
+│                      FRONTEND                                │
+│  React 18 · TypeScript · Vite · Tailwind CSS · Framer Motion│
+│  shadcn/ui · React Router · Sonner (toasts)                 │
+├─────────────────────────────────────────────────────────────┤
+│                       BACKEND                                │
+│  FastAPI (Python) · Pydantic · Uvicorn                      │
+├─────────────────────────────────────────────────────────────┤
+│                      DATABASE                                │
+│  Supabase (PostgreSQL) · Row Level Security                 │
+├─────────────────────────────────────────────────────────────┤
+│                     INTEGRATIONS                             │
+│  Twilio SMS · Google Gemini AI · Supabase Auth              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🗺️ System Architecture
+## Project Structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    LIFEFORGE CONNECT                     │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
-│  │  Donor    │  │ Patient  │  │Hospital  │  │  NGO   │  │
-│  │  Portal   │  │  Portal  │  │Dashboard │  │ Portal │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘  │
-│       └─────────────┴─────────────┴─────────────┘       │
-│                           │                              │
-│              ┌────────────▼────────────┐                 │
-│              │    AI Matching Engine    │                 │
-│              │  · Compatibility Scorer  │                 │
-│              │  · Shortage Predictor   │                 │
-│              │  · Transport Optimizer  │                 │
-│              └────────────┬────────────┘                 │
-│                           │                              │
-│   ┌───────────┬───────────┼───────────┬──────────────┐  │
-│   │  Donor DB │ Blood     │ Milk Bank │  Blockchain   │  │
-│   │ (verified)│ Registry  │ Network   │  Ledger       │  │
-│   └───────────┴───────────┴───────────┴──────────────┘  │
-└─────────────────────────────────────────────────────────┘
+LifeForgeConnect/
+├── FRONTEND/                    # React + TypeScript frontend
+│   ├── src/
+│   │   ├── components/          # Reusable UI components
+│   │   │   ├── milk/            # MilkBridge module components (7 files)
+│   │   │   ├── ui/              # shadcn/ui components
+│   │   │   ├── Navbar.tsx
+│   │   │   ├── Footer.tsx
+│   │   │   └── ...
+│   │   ├── pages/               # Route pages
+│   │   │   ├── BloodBridge.tsx  # Blood donation module
+│   │   │   ├── PlateletAlert.tsx# Platelet donation module
+│   │   │   ├── MilkBridge.tsx   # Breast milk donation module
+│   │   │   ├── ThalCare.tsx     # Thalassemia support module
+│   │   │   ├── LifeForgeAI.tsx  # AI chat assistant
+│   │   │   ├── Dashboard.tsx    # User dashboard
+│   │   │   ├── Register.tsx     # Donor/Hospital registration
+│   │   │   ├── Login.tsx        # Authentication
+│   │   │   └── Index.tsx        # Landing page
+│   │   ├── lib/
+│   │   │   └── api.ts           # API client with all endpoints
+│   │   └── hooks/
+│   │       └── AuthContext.tsx  # Authentication context
+│   └── .env                     # VITE_API_URL
+│
+├── backend/                     # FastAPI Python backend
+│   ├── routes/                  # API route handlers
+│   │   ├── auth.py              # Authentication & registration
+│   │   ├── blood.py             # BloodBridge endpoints
+│   │   ├── platelet.py          # PlateletAlert endpoints
+│   │   ├── milk.py              # MilkBridge endpoints (largest)
+│   │   ├── thal.py              # ThalCare endpoints
+│   │   ├── ai_chat.py           # LifeForge AI endpoints
+│   │   ├── dashboard.py         # Dashboard data endpoints
+│   │   └── notifications.py     # Notification endpoints
+│   ├── utils/
+│   │   ├── db.py                # Supabase client
+│   │   ├── matching.py          # Haversine distance, scoring
+│   │   └── sms.py               # Twilio SMS integration
+│   ├── migrations/              # SQL migration files
+│   ├── main.py                  # FastAPI app entry point
+│   ├── schema.sql               # Database schema
+│   └── .env                     # Supabase & Twilio credentials
+│
+└── README.md
 ```
 
 ---
 
-## 📦 Getting Started
+## Module Details
+
+### BloodBridge
+- Donor registration with blood group, location
+- Hospital blood requests with urgency levels (CRITICAL/URGENT/NORMAL)
+- Smart matching based on blood type compatibility and distance
+- Real-time shortage alerts with countdown timers
+- SMS notifications to nearby donors
+
+### PlateletAlert
+- Dedicated platelet donor registry
+- Apheresis appointment scheduling
+- Cancer/dengue patient matching
+- Recurring donation tracking
+
+### MilkBridge (Most Complete)
+- **Donor Flow**: Register → Get matched → Accept/Decline → Pickup → Donate
+- **Hospital Flow**: Post shortage → Find matches → Schedule pickup → Log donation
+- **Features**:
+  - Milk Passport tracking system (unique IDs for each donation)
+  - Cold-chain status tracking (Collected → Pasteurized → In Transit → Delivered)
+  - Screening status verification
+  - Anonymous donation option
+  - Expiry alerts for milk bank inventory
+- **Components**: 7 modular React components for maintainability
+
+### ThalCare
+- Thalassemia patient profiles
+- Regular transfusion scheduling
+- Compatible donor matching
+- Iron chelation reminders
+
+### LifeForge AI
+- AI-powered chat assistant
+- Donor eligibility guidance
+- Health screening questions
+- Powered by Google Gemini
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- Node.js v18+
+- Node.js 18+
 - Python 3.10+
-- PostgreSQL 14+
-- Docker & Docker Compose
+- Supabase account (free tier works)
+- Twilio account (optional, for SMS)
 
-### Installation
-
+### 1. Clone the repository
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/lifeforge-connect.git
-cd lifeforge-connect
+git clone https://github.com/your-org/LifeForgeConnect.git
+cd LifeForgeConnect
+```
 
-# Install frontend dependencies
-cd client && npm install
+### 2. Backend Setup
+```bash
+cd backend
 
-# Install backend dependencies
-cd ../server && pip install -r requirements.txt
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Set up environment variables
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
 cp .env.example .env
-# Fill in your API keys (Google Maps, Twilio, Aadhaar sandbox, etc.)
-
-# Start all services
-docker-compose up --build
-
-# Run ML model setup
-cd ml && python setup_models.py
+# Edit .env with your Supabase credentials:
+# SUPABASE_URL=https://xxx.supabase.co
+# SUPABASE_KEY=your-anon-key
+# TWILIO_SID=xxx (optional)
+# TWILIO_AUTH_TOKEN=xxx (optional)
+# TWILIO_PHONE=+1xxx (optional)
 ```
 
-### Running in Development
+### 3. Database Setup
+1. Go to your Supabase project → SQL Editor
+2. Run `backend/schema.sql` to create tables
+3. Run any migrations in `backend/migrations/`
 
+### 4. Frontend Setup
 ```bash
-# Terminal 1 — Frontend
-cd client && npm run dev
+cd FRONTEND
 
-# Terminal 2 — Backend API
-cd server && uvicorn main:app --reload
+# Install dependencies
+npm install
 
-# Terminal 3 — ML Prediction Service
-cd ml && python shortage_predictor.py
+# Configure environment
+echo "VITE_API_URL=http://localhost:8001" > .env
 ```
 
-Visit `http://localhost:3000` to see the platform live.
+### 5. Run the Application
 
----
-
-## 🌍 Impact We're Building Toward
-
-| Metric | 12-Month Target |
-|--------|----------------|
-| Registered donors | 1,000,000+ |
-| Hospitals onboarded | 500+ |
-| Lives impacted | 50,000+ |
-| Milk bank nodes | 100+ NICU units |
-| Cities covered | 50 major Indian cities |
-
----
-
-## 🤝 Contributing
-
-We are an open-source project with a mission larger than any team. We welcome developers, designers, ML engineers, healthcare professionals, and advocates.
-
+**Terminal 1 - Backend:**
 ```bash
-# Fork the repo, then:
-git checkout -b feature/your-feature-name
-git commit -m "feat: describe your contribution"
-git push origin feature/your-feature-name
-# Open a Pull Request 🚀
+cd backend
+uvicorn main:app --reload --port 8001
 ```
 
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting. We follow a Code of Conduct rooted in respect and shared purpose.
+**Terminal 2 - Frontend:**
+```bash
+cd FRONTEND
+npm run dev
+```
+
+Visit `http://localhost:5173` to see the app.
 
 ---
 
-## 📄 License
+## API Endpoints
 
-Distributed under the MIT License. See [`LICENSE`](./LICENSE) for details.
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/register/donor` | Register new donor |
+| POST | `/auth/register/hospital` | Register hospital/org |
+| POST | `/auth/login` | Login |
+| POST | `/auth/otp/send` | Send OTP |
+| POST | `/auth/otp/verify` | Verify OTP |
+
+### BloodBridge
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/blood/donors` | List blood donors |
+| GET | `/blood/requests/open` | Open blood requests |
+| POST | `/blood/register-donor` | Register blood donor |
+| POST | `/blood/requests` | Post blood request |
+| POST | `/blood/match` | Find matching donors |
+
+### MilkBridge
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/milk/donors` | List milk donors |
+| GET | `/milk/bank` | Milk bank inventory |
+| GET | `/milk/shortage-alerts` | NICU shortage alerts |
+| GET | `/milk/requests/for-donor` | Requests for a donor |
+| GET | `/milk/matches/donor/{id}` | Donor's pending matches |
+| GET | `/milk/dashboard/hospital/{id}` | Hospital dashboard |
+| POST | `/milk/register-donor` | Register milk donor |
+| POST | `/milk/requests` | Post milk shortage |
+| POST | `/milk/match` | Find matching donors |
+| POST | `/milk/matches` | Create donor-request match |
+| POST | `/milk/matches/{id}/respond` | Accept/decline match |
+| POST | `/milk/donations` | Log donation (Milk Passport) |
+| GET | `/milk/donations/{passport_id}` | Get donation details |
+| PATCH | `/milk/matches/{id}` | Update match status |
+| PATCH | `/milk/donors/{id}` | Update donor profile |
+
+### Other Modules
+Similar patterns for `/platelet/*`, `/thal/*`
 
 ---
 
-## 🙏 Acknowledgements
+## Database Schema
 
-Built with love, urgency, and sleepless nights.
+Key tables:
+- `donors` - Donor profiles with blood group, location, verification
+- `hospitals` - Hospital/org profiles
+- `milk_donors` - Milk-specific donor data
+- `milk_requests` - NICU milk requests
+- `milk_matches` - Donor-request matches with workflow status
+- `milk_donations` - Logged donations with Milk Passport IDs
+- `milk_bank` - Pasteurized milk inventory
+- `blood_requests` - Blood shortage requests
+- `notifications` - In-app notifications
+- `matches` - Cross-module match tracking
 
-To every donor who said yes, and every patient still waiting — **this is for you.**
+See `backend/schema.sql` for complete schema.
+
+---
+
+## Environment Variables
+
+### Backend (.env)
+```env
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=your-anon-key
+TWILIO_SID=ACxxx           # Optional
+TWILIO_AUTH_TOKEN=xxx      # Optional
+TWILIO_PHONE=+1234567890   # Optional
+GEMINI_API_KEY=xxx         # For AI chat
+```
+
+### Frontend (.env)
+```env
+VITE_API_URL=http://localhost:8001
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit changes: `git commit -m "feat: add your feature"`
+4. Push: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+### Module Ownership
+- Each module (BloodBridge, MilkBridge, etc.) can be developed independently
+- MilkBridge components are in `FRONTEND/src/components/milk/`
+- Keep module-specific code in module-owned files to avoid conflicts
+
+---
+
+## Testing
+
+### Register Test Accounts
+1. Go to `/register` and create a donor account
+2. Go to `/register?type=hospital` and create a hospital account
+3. Test flows:
+   - Donor: Register for module → See nearby requests → Respond
+   - Hospital: Post request → Find matches → Coordinate pickup
+
+### API Testing
+```bash
+# Health check
+curl http://localhost:8001/
+
+# Get donors
+curl http://localhost:8001/milk/donors
+```
+
+---
+
+## License
+
+MIT License - see [LICENSE](./LICENSE)
+
+---
+
+## Acknowledgements
+
+Built with purpose for every donor who said yes, and every patient still waiting.
 
 ---
 
 <div align="center">
 
 **LifeForge Connect** · *Because the right match shouldn't be a miracle. It should be a system.*
-
-⭐ Star this repo if you believe technology can save lives.
 
 </div>
