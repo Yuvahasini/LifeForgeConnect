@@ -69,7 +69,6 @@ const get = <T>(path: string, params?: Record<string, any>) => req<T>("GET", pat
 const post = <T>(path: string, body?: unknown) => req<T>("POST", path, body);
 const patch = <T>(path: string, body?: unknown) => req<T>("PATCH", path, body);
 
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Notification {
@@ -277,6 +276,8 @@ export const api = {
             localStorage.setItem("lf_token", data.access_token);
             localStorage.setItem("lf_user_id", data.user_id);
             localStorage.setItem("lf_role", data.role);
+            // Also sync with AuthContext keys
+            localStorage.setItem("lfc_role", data.role);
             return data;
         },
 
@@ -284,6 +285,10 @@ export const api = {
             localStorage.removeItem("lf_token");
             localStorage.removeItem("lf_user_id");
             localStorage.removeItem("lf_role");
+            localStorage.removeItem("lfc_role");
+            localStorage.removeItem("lfc_userName");
+            localStorage.removeItem("lfc_orgType");
+            localStorage.removeItem("lfc_profile");
         },
 
         sendOtp: (mobile: string) => post("/auth/otp/send", { mobile }),
