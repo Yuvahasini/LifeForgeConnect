@@ -24,12 +24,6 @@ const MODULE_CONFIG: Record<string, {
   milk: { key: "milk", label: "Milk Donation", emoji: "🍼", path: "/milk-bridge", color: "text-milk", bg: "bg-milk/10", border: "border-milk/30", gradient: "from-pink-400 to-rose-500", description: "Donate breast milk to save premature infants in NICUs.", genderRestricted: "female" },
 };
 
-const mockHistory = [
-  { date: "Feb 15, 2025", type: "🩸 Blood", hospital: "Lilavati Hospital", status: "Fulfilled", impact: "3 lives saved" },
-  { date: "Jan 28, 2025", type: "⏱️ Platelets", hospital: "Kokilaben Hospital", status: "Fulfilled", impact: "1 patient helped" },
-  { date: "Jan 10, 2025", type: "🩸 Blood", hospital: "Breach Candy Hospital", status: "Fulfilled", impact: "2 lives saved" },
-];
-
 function ModuleCard({ mod, index }: { mod: typeof MODULE_CONFIG[string]; index: number }) {
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.07 }}>
@@ -155,6 +149,8 @@ function SimpleModulePanel({ modKey }: { modKey: string }) {
 function DonorDashboard() {
   const [available, setAvailable] = useState(true);
   const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [donorHistory, setDonorHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const { userName, profile } = useAuth();
   const name = profile?.name || userName || "Donor";
   const initial = name.charAt(0).toUpperCase();
@@ -165,6 +161,15 @@ function DonorDashboard() {
   const donorTypes = (profile?.donor_types || []) as string[];
   const activeModules = Object.values(MODULE_CONFIG).filter(m => donorTypes.includes(m.key));
   useEffect(() => { if (activeModules.length > 0 && !activeModule) setActiveModule(activeModules[0].key); }, [donorTypes]);
+
+  const userId = getCurrentUserId();
+  useEffect(() => {
+    if (!userId) { setHistoryLoading(false); return; }
+    api.blood.getDonorHistory(userId)
+      .then((data: any) => setDonorHistory(data))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [userId]);
 
   return (
     <div className="space-y-6">
@@ -266,13 +271,35 @@ function DonorDashboard() {
               <tr>{["Date", "Type", "Hospital", "Status", "Impact"].map(h => <th key={h} className="font-body text-xs font-semibold text-muted-foreground px-4 py-3 text-left">{h}</th>)}</tr>
             </thead>
             <tbody>
-              {mockHistory.map((row, i) => (
+              {historyLoading && (
+                <tr><td colSpan={5} className="text-center py-6 text-muted-foreground font-body text-sm">Loading...</td></tr>
+              )}
+              {!historyLoading && donorHistory.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground font-body text-sm">No donation history yet.</td></tr>
+              )}
+              {!historyLoading && donorHistory.map((row: any, i: number) => (
                 <tr key={i} className="border-t border-border hover:bg-muted/30 transition-colors">
-                  <td className="font-body text-sm px-4 py-3 text-muted-foreground">{row.date}</td>
-                  <td className="font-body text-sm px-4 py-3 font-medium">{row.type}</td>
-                  <td className="font-body text-sm px-4 py-3 text-muted-foreground">{row.hospital}</td>
-                  <td className="px-4 py-3"><Badge className="bg-secondary/15 text-secondary border-0 font-body text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />{row.status}</Badge></td>
-                  <td className="font-body text-sm px-4 py-3 text-accent font-semibold">{row.impact}</td>
+                  <td className="font-body text-sm px-4 py-3 text-muted-foreground">
+                    {row.responded_at ? new Date(row.responded_at).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : new Date(row.created_at).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })}
+                  </td>
+                  <td className="font-body text-sm px-4 py-3 font-medium">
+                    🩸 {row.urgency?.charAt(0) + row.urgency?.slice(1).toLowerCase()} Blood
+                  </td>
+                  <td className="font-body text-sm px-4 py-3 text-muted-foreground">{row.hospital || "—"}</td>
+                  <td className="px-4 py-3">
+                    <Badge className={`border-0 font-body text-xs ${
+                      row.status === "fulfilled" ? "bg-secondary/15 text-secondary" :
+                      row.status === "accepted"  ? "bg-blue-500/15 text-blue-600" :
+                      row.status === "declined"  ? "bg-blood/10 text-blood" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      {row.status?.charAt(0).toUpperCase() + row.status?.slice(1)}
+                    </Badge>
+                  </td>
+                  <td className="font-body text-sm px-4 py-3 text-accent font-semibold">
+                    {row.status === "fulfilled" ? "1 life helped 🎉" : row.status === "accepted" ? "Awaiting donation" : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
