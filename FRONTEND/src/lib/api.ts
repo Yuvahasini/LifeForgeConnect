@@ -18,7 +18,7 @@ const BASE = import.meta.env.VITE_API_URL ?? "";
 // ── Core fetch helper ─────────────────────────────────────────────────────────
 
 async function req<T>(
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH",
     path: string,
     body?: unknown,
     params?: Record<string, string | number | boolean | undefined | null>
@@ -67,6 +67,7 @@ async function req<T>(
 
 const get = <T>(path: string, params?: Record<string, any>) => req<T>("GET", path, undefined, params);
 const post = <T>(path: string, body?: unknown) => req<T>("POST", path, body);
+const patch = <T>(path: string, body?: unknown) => req<T>("PATCH", path, body);
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -149,16 +150,65 @@ export interface OrganRecipient {
 export interface MilkDonor {
     id: string; donor_id: string; name: string; babyAge: string;
     qty: string; area: string; verified: boolean; impact: string;
+    pincode?: string; screening_status?: string; is_screened?: boolean;
+    trust_score?: number; distance_km?: number | null; distance?: string;
+    is_anonymous?: boolean; availability_start?: string; availability_end?: string;
 }
 
 export interface MilkBankRow {
     id: string; from: string; pasteurized: string;
-    expiry: string; qty: string; status: string;
+    expiry: string; qty: string; status: string; type?: string;
 }
 
 export interface MilkShortageAlert {
     id: string; hospital: string; city: string;
     infant_name: string | null; quantity_needed: string; message: string;
+    urgency?: string; volume_ml?: number; pincode?: string;
+    time_left?: string; hours_left?: number;
+}
+
+export interface MilkMatch {
+    milk_donor_id: string; donor_id: string; name: string;
+    city: string; pincode: string; quantity_ml: number;
+    distance_km: number | null; distance: string; match_score: number;
+    trust_score: number; verified: boolean; is_anonymous: boolean;
+    pincode_match: boolean;
+}
+
+export interface MilkMatchResult {
+    request_id: string; hospital: string; city: string;
+    quantity_needed: number; urgency: string;
+    total_matches: number; matches: MilkMatch[];
+}
+
+export interface MilkDonation {
+    passport_id: string; donor_name: string; collection_date: string;
+    volume_ml: number; pasteurized: boolean; pasteurization_date?: string;
+    pasteurization_method?: string; expiry_date?: string;
+    receiving_hospital?: string; receiving_city?: string;
+    receiving_infant_ref?: string; status: string;
+    quality_check_passed?: boolean; created_at: string;
+}
+
+export interface MilkHospitalDashboard {
+    hospital: { id: string; name: string; city: string };
+    stats: {
+        active_requests: number; pending_matches: number;
+        accepted_matches: number; total_received_ml: number;
+        donations_received: number;
+    };
+    active_requests: Array<{
+        id: string; infant_ref: string; volume_ml: number;
+        urgency: string; created_at: string;
+    }>;
+    matched_donors: Array<{
+        id: string; donor_name: string; city: string;
+        quantity_ml: number; status: string; request_id: string;
+    }>;
+    donation_history: Array<{
+        passport_id: string; donor_name: string; volume_ml: number;
+        date: string; status: string;
+    }>;
 }
 
 export interface DonorDashboard {
@@ -379,8 +429,17 @@ export const api = {
     // ── MilkBridge ──────────────────────────────────────────────────────────────
 
     milk: {
-        getDonors: () =>
-            get<MilkDonor[]>("/milk/donors"),
+        getDonors: (params?: {
+            pincode?: string;
+            city?: string;
+            screening_status?: string;
+            lat?: number;
+            lng?: number;
+            limit?: number;
+        }) => get<MilkDonor[]>("/milk/donors", params),
+
+        getDonorDetail: (milkDonorId: string) =>
+            get<MilkDonor>(`/milk/donors/${milkDonorId}`),
 
         getBank: () =>
             get<MilkBankRow[]>("/milk/bank"),
@@ -388,11 +447,73 @@ export const api = {
         getShortageAlerts: () =>
             get<MilkShortageAlert[]>("/milk/shortage-alerts"),
 
-        registerDonor: (body: { donor_id: string; baby_age_months: number; quantity_ml_per_day: number; pickup_location?: string }) =>
-            post("/milk/register-donor", body),
+        getOpenRequests: () =>
+            get<MilkShortageAlert[]>("/milk/requests/open"),
 
-        postRequest: (body: { hospital_id: string; infant_name?: string; daily_quantity_ml: number }) =>
-            post("/milk/requests", body),
+        getRequestsForDonor: (donorId: string) =>
+            get<any[]>("/milk/requests/for-donor", { donor_id: donorId }),
+
+        registerDonor: (body: {
+            donor_id: string;
+            baby_age_months: number;
+            quantity_ml_per_day: number;
+            pickup_location?: string;
+            city?: string;
+            pincode?: string;
+            is_anonymous?: boolean;
+            availability_start?: string;
+            availability_end?: string;
+        }) => post<{ success: boolean; milk_donor_id: string; message: string }>("/milk/register-donor", body),
+
+        updateDonor: (milkDonorId: string, body: {
+            is_available?: boolean;
+            quantity_ml_per_day?: number;
+            baby_age_months?: number;
+            is_anonymous?: boolean;
+        }) => patch<{ success: boolean; message: string }>(`/milk/donors/${milkDonorId}`, body),
+
+        postRequest: (body: {
+            hospital_id: string;
+            infant_name?: string;
+            daily_quantity_ml: number;
+            urgency?: string;
+            pincode?: string;
+        }) => post<{ success: boolean; request_id: string; donors_notified: number; sms_sent: number; message: string }>("/milk/requests", body),
+
+        // Smart matching
+        findMatches: (body: {
+            request_id: string;
+            max_distance_km?: number;
+            min_quantity_ml?: number;
+            limit?: number;
+        }) => post<MilkMatchResult>("/milk/match", body),
+
+        createMatch: (body: { request_id: string; donor_id: string; milk_donor_id?: string }) =>
+            post<{ success: boolean; match_id: string; message: string }>("/milk/matches", body),
+
+        respondToMatch: (matchId: string, body: { donor_id: string; status: "accepted" | "declined" }) =>
+            post<{ success: boolean; status: string; message: string }>(`/milk/matches/${matchId}/respond`, body),
+
+        // Donation tracking (Milk Passport)
+        createDonation: (body: {
+            donor_id: string;
+            request_id?: string;
+            collection_date: string;
+            volume_ml: number;
+            pasteurized?: boolean;
+            pasteurization_date?: string;
+            pasteurization_method?: string;
+            receiving_hospital_id?: string;
+            receiving_infant_ref?: string;
+            notes?: string;
+        }) => post<{ success: boolean; passport_id: string; donation_id: string; expiry_date: string; message: string }>("/milk/donations", body),
+
+        getDonation: (passportId: string) =>
+            get<MilkDonation>(`/milk/donations/${passportId}`),
+
+        // Hospital dashboard
+        getHospitalDashboard: (hospitalId: string) =>
+            get<MilkHospitalDashboard>(`/milk/dashboard/hospital/${hospitalId}`),
     },
 
 

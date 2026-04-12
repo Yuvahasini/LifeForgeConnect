@@ -125,6 +125,17 @@ create table if not exists milk_donors (
   health_score          integer default 70,
   test_doc_url          text,
   is_available          boolean default true,
+  pincode               text,
+  city                  text,
+  screening_status      text default 'pending',   -- 'pending' | 'cleared' | 'rejected'
+  screening_date        date,
+  availability_start    time default '08:00',
+  availability_end      time default '20:00',
+  is_anonymous          boolean default false,
+  lat                   float,
+  lng                   float,
+  mobile                text,
+  last_donation_date    date,
   created_at            timestamptz default now()
 );
 
@@ -133,7 +144,14 @@ create table if not exists milk_requests (
   hospital_id        uuid references hospitals(id) on delete set null,
   infant_name        text,
   daily_quantity_ml  integer,
+  volume_needed_ml   integer,
   status             text default 'open',
+  urgency            text default 'normal',      -- 'critical' | 'urgent' | 'normal'
+  pincode            text,
+  lat                float,
+  lng                float,
+  matched_at         timestamptz,
+  fulfilled_at       timestamptz,
   created_at         timestamptz default now()
 );
 
@@ -146,6 +164,45 @@ create table if not exists milk_bank (
   expiry_date      date,
   status           text default 'Available',   -- 'Available' | 'Reserved' | 'Low Stock' | 'Expired'
   created_at       timestamptz default now()
+);
+
+-- Milk donations (Milk Passport tracking)
+create table if not exists milk_donations (
+  id                    uuid default gen_random_uuid() primary key,
+  passport_id           text unique not null,
+  donor_id              uuid references donors(id) on delete set null,
+  milk_donor_id         uuid references milk_donors(id) on delete set null,
+  request_id            uuid references milk_requests(id) on delete set null,
+  collection_date       date not null,
+  collection_time       time,
+  volume_ml             integer not null,
+  pasteurized           boolean default false,
+  pasteurization_date   date,
+  pasteurization_method text,
+  expiry_date           date,
+  receiving_hospital_id uuid references hospitals(id) on delete set null,
+  receiving_infant_ref  text,
+  delivered_date        date,
+  status                text default 'collected',
+  quality_check_passed  boolean,
+  rejection_reason      text,
+  notes                 text,
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
+);
+
+-- Milk matches (donor-request tracking)
+create table if not exists milk_matches (
+  id            uuid default gen_random_uuid() primary key,
+  request_id    uuid references milk_requests(id) on delete cascade,
+  donor_id      uuid references donors(id) on delete set null,
+  milk_donor_id uuid references milk_donors(id) on delete set null,
+  match_score   float,
+  distance_km   float,
+  status        text default 'pending',   -- 'pending' | 'notified' | 'accepted' | 'declined' | 'fulfilled' | 'expired'
+  notified_at   timestamptz,
+  responded_at  timestamptz,
+  created_at    timestamptz default now()
 );
 
 -- ── Notifications ─────────────────────────────────────────────────────────────
@@ -178,6 +235,9 @@ create table if not exists matches (
 alter publication supabase_realtime add table blood_requests;
 alter publication supabase_realtime add table platelet_requests;
 alter publication supabase_realtime add table organ_requests;
+alter publication supabase_realtime add table milk_requests;
+alter publication supabase_realtime add table milk_donations;
+alter publication supabase_realtime add table milk_matches;
 alter publication supabase_realtime add table matches;
 alter publication supabase_realtime add table notifications;
 
@@ -195,6 +255,8 @@ alter table thal_patients    enable row level security;
 alter table milk_donors      enable row level security;
 alter table milk_requests    enable row level security;
 alter table milk_bank        enable row level security;
+alter table milk_donations   enable row level security;
+alter table milk_matches     enable row level security;
 alter table matches          enable row level security;
 
 -- Public read (anyone can read donor lists, requests, hospitals)
@@ -207,6 +269,8 @@ create policy "Public read thal_patients"   on thal_patients    for select using
 create policy "Public read milk_donors"     on milk_donors      for select using (true);
 create policy "Public read milk_requests"   on milk_requests    for select using (true);
 create policy "Public read milk_bank"       on milk_bank        for select using (true);
+create policy "Public read milk_donations"  on milk_donations   for select using (true);
+create policy "Public read milk_matches"    on milk_matches     for select using (true);
 
 -- ── Seed Data ─────────────────────────────────────────────────────────────────
 
