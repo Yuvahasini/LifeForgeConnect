@@ -303,7 +303,7 @@ def get_milk_shortage_alerts():
             "infant_name":     r.get("infant_name"),
             "quantity_needed": f"{qty}ml/day" if qty else "",
             "volume_ml":       qty,
-            "urgency":         "NORMAL",
+            "urgency":         (r.get("urgency") or "normal").upper(),
             "time_left":       time_left,
             "hours_left":      time_left_hours,
             "message":         f"NICU at {hospital.get('name','')}, {hospital.get('city','')} needs "
