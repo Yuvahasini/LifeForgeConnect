@@ -5,8 +5,6 @@ const modules = [
   { name: "BloodBridge", path: "/blood-bridge", emoji: "🩸" },
   { name: "ThalCare", path: "/thal-care", emoji: "💉" },
   { name: "PlateletAlert", path: "/platelet-alert", emoji: "⏱️" },
-  { name: "MarrowMatch", path: "/marrow-match", emoji: "🧬" },
-  { name: "LastGift", path: "/last-gift", emoji: "🫁" },
   { name: "MilkBridge", path: "/milk-bridge", emoji: "🍼" },
 ];
 
