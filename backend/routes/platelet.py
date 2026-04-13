@@ -461,7 +461,7 @@ def get_hospital_matches(hospital_id: str):
     req_map = {r["id"]: r for r in reqs.data}
 
     matches = supabase.table("platelet_matches") \
-        .select("*, donors(name, blood_group, city, trust_score)") \
+        .select("*, donors(name, mobile, blood_group, city, trust_score)") \
         .in_("request_id", req_ids) \
         .order("created_at", desc=True) \
         .execute()
@@ -479,6 +479,7 @@ def get_hospital_matches(hospital_id: str):
             "donor_blood":  donor.get("blood_group", "—"),
             "donor_city":   donor.get("city", "—"),
             "donor_trust":  round((donor.get("trust_score", 50) / 100) * 5, 1),
+            "contact":      donor.get("mobile", "—"),
             "created_at":   m["created_at"],
             "responded_at": m.get("responded_at"),
             "notes":        m.get("notes"),
