@@ -335,21 +335,59 @@ class DonorRequestBody(BaseModel):
 @router.post("/donors/request")
 def request_specific_donor(body: DonorRequestBody):
     """Verified hospital targets a specific donor."""
+    # 1. Validate hospital — try the provided ID first
+    hosp_data = None
 
-    # Verification gate
-    hosp_res = supabase.table("hospitals") \
-        .select("id, name, city, is_verified") \
-        .eq("id", body.hospital_id) \
-        .single() \
-        .execute()
-    if not hosp_res.data:
-        raise HTTPException(status_code=400, detail="Hospital not found.")
-    if not hosp_res.data.get("is_verified"):
+    try:
+        hosp = supabase.table("hospitals") \
+            .select("id, name, city, is_verified") \
+            .eq("id", body.hospital_id) \
+            .single() \
+            .execute()
+        hosp_data = hosp.data
+    except Exception as e:
+        logger.warning(f"Hospital lookup failed for {body.hospital_id}: {e}")
+
+    # If not found, the user might be logged in with a stale session or
+    # the UUID is from a donors row. Check if this ID belongs to a donor
+    # and give a helpful error message.
+    if not hosp_data:
+        # Check if this ID is a donor (common stale-session bug)
+        try:
+            donor_check = supabase.table("donors") \
+                .select("id, name") \
+                .eq("id", body.hospital_id) \
+                .limit(1) \
+                .execute()
+            if donor_check.data:
+                donor_name = donor_check.data[0].get("name", "Unknown")
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"You are logged in as donor '{donor_name}', not as a hospital. "
+                        f"Please log out and log back in using the Hospital/Org tab "
+                        f"with your hospital credentials."
+                    )
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Hospital not found for your account. "
+                f"Please log out and log back in as a hospital."
+            )
+        )
+
+    if not hosp_data.get("is_verified"):
         raise HTTPException(status_code=403, detail="Only verified hospitals can send donor requests.")
 
-    hosp      = hosp_res.data
-    hosp_name = hosp["name"]
-    hosp_city = hosp.get("city", "")
+    hosp_name   = hosp_data["name"]
+    hosp_city   = hosp_data.get("city", "")
+    hospital_id = hosp_data["id"]
 
     # Donor verification gate
     donor_res = supabase.table("donors") \
@@ -448,7 +486,7 @@ def request_specific_donor(body: DonorRequestBody):
         "request_id": request_id,
         "donor_name": donor_name,
         "sms_sent":   sms_count > 0,
-        "message":    f"Request sent to {donor_name}. {'SMS alert sent!' if sms_count else ''}",
+        "message":    f"Request sent to {donor_name}. {'SMS alert sent!' if sms_count else 'In-app notification sent.'}",
     }
 
 
