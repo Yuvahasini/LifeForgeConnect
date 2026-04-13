@@ -6,7 +6,7 @@ import {
   Search, X, Heart, CheckCircle, XCircle, Clock,
   AlertTriangle, Zap, Calendar, MessageSquare,
   TrendingUp, Users, Activity, ChevronRight,
-  Bell, Shield, RefreshCw, Info
+  Bell, Shield, RefreshCw, Info, Phone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -406,13 +406,14 @@ export default function PlateletAlert() {
   };
 
   // ── Donor/Hospital Match Update ─────────────────────────────────────────────
-  const handleMatchUpdate = async (matchId: string, status: string, appointmentTime?: string, notes?: string) => {
+  const handleMatchUpdate = async (matchId: string, status: string, appointmentTime?: string, notes?: string, trustRating?: number) => {
     try {
       await api.platelet.updateMatch(matchId, {
         status,
         donor_id: userId!,
         appointment_time: appointmentTime,
         notes,
+        trust_rating: trustRating,
       });
       const messages: Record<string, string> = {
         accepted:  "✅ Accepted! Awaiting hospital appointment confirmation.",
@@ -986,6 +987,11 @@ export default function PlateletAlert() {
                                     <XCircle className="w-3 h-3 mr-1" /> Decline
                                   </Button>
                                 )}
+                                {(m.status === "accepted" || m.status === "confirmed") && m.contact && m.contact !== "—" && (
+                                  <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-xs h-8 px-3 rounded-lg">
+                                    <Phone className="w-3.5 h-3.5" /> Call
+                                  </a>
+                                )}
                               </div>
                             </div>
                           </motion.div>
@@ -1057,10 +1063,19 @@ export default function PlateletAlert() {
                                     <Calendar className="w-3 h-3 mr-1" /> Confirm Appt
                                   </Button>
                                 )}
+                                {(m.status === "accepted" || m.status === "confirmed") && m.contact && m.contact !== "—" && (
+                                  <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-[10px] h-8 px-3 rounded-lg">
+                                    <Phone className="w-3 h-3" /> Call
+                                  </a>
+                                )}
                                 {m.status === "confirmed" && (
                                   <Button
                                     size="sm"
-                                    onClick={() => handleMatchUpdate(m.match_id, "completed")}
+                                    onClick={() => {
+                                      const r = window.prompt("Rate the donor's reliability out of 5 (e.g. 5) [Optional]:", "5");
+                                      const rating = r ? parseInt(r, 10) : undefined;
+                                      handleMatchUpdate(m.match_id, "completed", undefined, undefined, isNaN(rating!) ? undefined : rating);
+                                    }}
                                     className="bg-purple-600 hover:bg-purple-700 text-white font-body text-[10px] h-8 px-3 rounded-lg"
                                   >
                                     <CheckCircle className="w-3 h-3 mr-1" /> Mark Done
