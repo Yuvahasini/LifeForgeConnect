@@ -368,6 +368,10 @@ export default function BloodBridge() {
     lng:          (d as any).lng ?? 0,
   }));
 
+  const hospitalLocation = isHospital && profile?.lat && profile?.lng
+    ? { lat: profile.lat, lng: profile.lng, name: userName || "Your Hospital" }
+    : null;
+
   // ════════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-background">
@@ -1035,7 +1039,7 @@ export default function BloodBridge() {
                           <MapPin className="w-5 h-5 text-blood" /> Nearby Donors
                         </h3>
                         <div className="rounded-2xl border-2 border-blood/20 bg-card shadow-card overflow-hidden">
-                          <BloodBridgeMap donors={mapDonors} />
+                          <BloodBridgeMap donors={mapDonors} hospitalLocation={hospitalLocation} />
                         </div>
                       </div>
                     </>
