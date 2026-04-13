@@ -11,6 +11,8 @@ export interface UserProfile {
     trust_score?: number;
     is_verified?: boolean;
     donor_types?: string[];
+    lat?: number;
+    lng?: number;
 }
 
 interface AuthContextType {
