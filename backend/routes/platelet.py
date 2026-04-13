@@ -9,7 +9,7 @@ Fixes:
   5. Urgency filtering support
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException, Header
@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from utils.db import supabase
 from utils.matching import blood_compatible, days_since
-from datetime import date
+from utils.blood_notify import notify
 
 router = APIRouter()
 
@@ -272,8 +272,11 @@ def create_platelet_match(body: PlateletMatchBody):
 # ── PATCH /platelet/matches/{match_id} ── Donor accepts or declines ───────────
 
 class MatchUpdateBody(BaseModel):
-    status: str   # "accepted" | "declined"
+    status: str   # "accepted" | "declined" | "confirmed" | "completed" | "cancelled"
     donor_id: str
+    appointment_time: Optional[str] = None
+    notes: Optional[str] = None
+    trust_rating: Optional[int] = None
 
 
 @router.api_route("/matches/{match_id}", methods=["PATCH", "PUT"])
@@ -293,7 +296,7 @@ def update_platelet_match(match_id: str, body: MatchUpdateBody):
 
     # 1. Fetch match and request info
     match_res = supabase.table("platelet_matches") \
-        .select("*, platelet_requests(hospital_id)") \
+        .select("*, platelet_requests(hospital_id, patient_name, blood_group, hospitals(name))") \
         .eq("id", match_id) \
         .single() \
         .execute()
@@ -304,39 +307,106 @@ def update_platelet_match(match_id: str, body: MatchUpdateBody):
     match_data = match_res.data
     request_data = match_data.get("platelet_requests") or {}
     hospital_id = request_data.get("hospital_id")
-    current_status = match_data["status"]
+    hospital_name = request_data.get("hospitals", {}).get("name", "The hospital")
+
+    # Fetch donor name
+    donor_res = supabase.table("donors").select("name").eq("id", match_data["donor_id"]).execute()
+    donor_name = donor_res.data[0]["name"] if donor_res.data else "Donor"
 
     # 2. Permission Check
     # Statuses updated by donor
-    if body.status in ("accepted", "declined"):
+    if status in ("accepted", "declined"):
         if match_data["donor_id"] != body.donor_id:
             raise HTTPException(status_code=403, detail="Only the donor can accept/decline.")
     
-    # Statuses updated by hospital (Can confirm if pending or accepted)
-    if body.status in ("confirmed", "completed"):
+    # Statuses updated by hospital
+    if status in ("confirmed", "completed", "cancelled"):
         if body.donor_id != hospital_id:
-             raise HTTPException(status_code=403, detail="Only the requesting hospital can confirm/complete.")
+             raise HTTPException(status_code=403, detail="Only the requesting hospital can update to this status.")
+
+    # Format slot notes parsing
+    final_notes = match_data.get("notes") or ""
+    if body.appointment_time:
+        final_notes += f"\n[Appointment: {body.appointment_time}]"
+    if body.notes:
+        final_notes += f"\nNote: {body.notes}"
+    final_notes = final_notes.strip()
 
     # 3. Update Match
     supabase.table("platelet_matches").update({
-        "status":       body.status,
+        "status":       status,
         "responded_at": datetime.now(timezone.utc).isoformat(),
+        "notes":        final_notes if final_notes else None
     }).eq("id", match_id).execute()
 
-    # 4. Lifecycle Logic: If completed, close the request
-    if body.status == "completed":
+    # 4. Lifecycle Logic & Notifications
+    if status == "completed":
         supabase.table("platelet_requests") \
             .update({"status": "closed"}) \
             .eq("id", match_data["request_id"]) \
             .execute()
         
-        # Also update donor's last_donation_date
+        updates = {"last_donation_date": date.today().isoformat()}
+
+        # Update trust score if rating provided (1 to 5)
+        if body.trust_rating is not None and 1 <= body.trust_rating <= 5:
+            current_trust = donor_res.data[0].get("trust_score") or 50.0
+            if "trust_score" not in donor_res.data[0]:
+                donor_full = supabase.table("donors").select("trust_score").eq("id", match_data["donor_id"]).execute()
+                current_trust = donor_full.data[0].get("trust_score") or 50.0
+            # Simple weighting: a rating of 5 increases score, 3 is neutral, 1 decreases.
+            change = (body.trust_rating - 3) * 1.5
+            new_score = max(10.0, min(50.0, current_trust + change))
+            updates["trust_score"] = new_score
+
         supabase.table("donors") \
-            .update({"last_donation_date": date.today().isoformat()}) \
+            .update(updates) \
             .eq("id", match_data["donor_id"]) \
             .execute()
+            
+        notify(
+            user_id    = match_data["donor_id"],
+            title      = "🎉 Apheresis Completed! Thank you",
+            message    = f"Your platelet donation for {request_data.get('patient_name')} was marked completed. You saved a life today!",
+            notif_type = "blood_response"
+        )
+        
+    elif status == "accepted":
+        notify(
+            user_id    = hospital_id,
+            title      = f"✅ Platelet Match Accepted",
+            message    = f"{donor_name} accepted the apheresis match. Please confirm their appointment slot soon.",
+            notif_type = "blood_response"
+        )
+        
+    elif status == "confirmed":
+        msg = f"Your apheresis donation appointment is confirmed."
+        if body.appointment_time:
+            msg += f" Slot: {body.appointment_time}."
+        notify(
+            user_id    = match_data["donor_id"],
+            title      = f"🗓️ Appointment Confirmed at {hospital_name}",
+            message    = msg,
+            notif_type = "blood_response"
+        )
+        
+    elif status == "declined":
+        notify(
+            user_id    = hospital_id,
+            title      = f"❌ Platelet Match Declined",
+            message    = f"{donor_name} cannot donate platelets at this time.",
+            notif_type = "blood_response"
+        )
+        
+    elif status == "cancelled":
+        notify(
+            user_id    = match_data["donor_id"],
+            title      = f"❌ Appointment Cancelled",
+            message    = f"Your platelet donation appointment at {hospital_name} was cancelled.",
+            notif_type = "blood_response"
+        )
 
-    return {"success": True, "status": body.status}
+    return {"success": True, "status": status, "appointment_time": body.appointment_time}
 
 
 # ── GET /platelet/matches/donor/{donor_id} ── Donor's pending matches ─────────
@@ -345,7 +415,7 @@ def update_platelet_match(match_id: str, body: MatchUpdateBody):
 def get_donor_matches(donor_id: str):
     """Returns all matches for a donor with request details."""
     res = supabase.table("platelet_matches") \
-        .select("*, platelet_requests(patient_name, cancer_type, blood_group, units, urgency, hospitals(name, city))") \
+        .select("*, platelet_requests(patient_name, cancer_type, blood_group, units, urgency, hospitals(name, city, contact))") \
         .eq("donor_id", donor_id) \
         .order("created_at", desc=True) \
         .execute()
@@ -355,15 +425,20 @@ def get_donor_matches(donor_id: str):
         req = m.get("platelet_requests") or {}
         hospital = req.get("hospitals") or {}
         results.append({
-            "match_id":   m["id"],
-            "status":     m["status"],
-            "created_at": m["created_at"],
-            "cancer":     req.get("cancer_type") or "—",
-            "group":      req.get("blood_group") or "—",
-            "units":      req.get("units", 1),
-            "urgency":    (req.get("urgency") or "urgent").upper(),
-            "hospital":   hospital.get("name", "Unknown"),
-            "city":       hospital.get("city", ""),
+            "match_id":     m["id"],
+            "status":       m["status"],
+            "created_at":   m["created_at"],
+            "responded_at": m.get("responded_at"),
+            "notes":        m.get("notes"),
+            "cancer":       req.get("cancer_type") or "—",
+            "group":        req.get("blood_group") or "—",
+            "units":        req.get("units", 1),
+            "urgency":      (req.get("urgency") or "urgent").upper(),
+            "hospital":     hospital.get("name", "Unknown"),
+            "city":         hospital.get("city", ""),
+            "contact":      hospital.get("contact", "—"),
+            "request_id":   m.get("request_id"),
+            "patient_name": req.get("patient_name", "Patient"),
         })
     return results
 
@@ -405,5 +480,214 @@ def get_hospital_matches(hospital_id: str):
             "donor_city":   donor.get("city", "—"),
             "donor_trust":  round((donor.get("trust_score", 50) / 100) * 5, 1),
             "created_at":   m["created_at"],
+            "responded_at": m.get("responded_at"),
+            "notes":        m.get("notes"),
         })
     return results
+
+
+# ── GET /platelet/dashboard ── Stats for the hero section ─────────────────────
+
+@router.get("/dashboard")
+def get_platelet_dashboard(user_id: Optional[str] = Query(None)):
+    """Returns high-level dashboard metrics for PlateletAlert."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    week_ago = (now - timedelta(days=7)).isoformat()
+
+    # Open requests
+    open_req = supabase.table("platelet_requests") \
+        .select("id, created_at", count="exact") \
+        .eq("status", "open") \
+        .execute()
+    open_count = len(open_req.data or [])
+
+    # Expiring in 24h
+    expiring = 0
+    for r in (open_req.data or []):
+        expiry_raw = r.get("expiry_date") or r.get("created_at")
+        try:
+            expiry_dt = datetime.fromisoformat(expiry_raw.replace("Z", "+00:00"))
+            if not r.get("expiry_date"):
+                from datetime import timedelta as td
+                expiry_dt = expiry_dt + td(days=5)
+            if (expiry_dt - now).total_seconds() < 86400:
+                expiring += 1
+        except Exception:
+            pass
+
+    # Apheresis donors
+    donors_res = supabase.table("donors").select("donor_types").eq("is_available", True).execute()
+    apheresis_count = sum(1 for d in (donors_res.data or []) if "platelet" in (d.get("donor_types") or []))
+
+    # Pending matches
+    pending_res = supabase.table("platelet_matches") \
+        .select("id", count="exact") \
+        .eq("status", "pending") \
+        .execute()
+    pending_count = len(pending_res.data or [])
+
+    # Completed this week
+    completed_res = supabase.table("platelet_matches") \
+        .select("id", count="exact") \
+        .eq("status", "completed") \
+        .gte("responded_at", week_ago) \
+        .execute()
+    completed_count = len(completed_res.data or [])
+
+    return {
+        "open_requests":      open_count,
+        "expiring_24h":       expiring,
+        "apheresis_donors":   apheresis_count,
+        "pending_matches":    pending_count,
+        "completed_this_week": completed_count,
+    }
+
+
+# ── POST /platelet/escalate/{request_id} ── Auto-alert more donors ────────────
+
+@router.post("/escalate/{request_id}")
+def escalate_platelet_request(request_id: str):
+    """When a critical request is unmatched, notify ALL compatible donors."""
+    req_res = supabase.table("platelet_requests") \
+        .select("*, hospitals(name, city)") \
+        .eq("id", request_id) \
+        .eq("status", "open") \
+        .execute()
+
+    if not req_res.data:
+        raise HTTPException(status_code=404, detail="Request not found or already closed.")
+
+    req_data = req_res.data[0]
+    hospital = req_data.get("hospitals") or {}
+    hosp_name = hospital.get("name", "A hospital")
+    hosp_city = hospital.get("city", "")
+    blood_group = req_data.get("blood_group")
+
+    # Get already-matched donors for this request
+    existing_matches = supabase.table("platelet_matches") \
+        .select("donor_id") \
+        .eq("request_id", request_id) \
+        .execute()
+    already_matched = {m["donor_id"] for m in (existing_matches.data or [])}
+
+    # Get ALL available apheresis donors not already matched
+    donors_res = supabase.table("donors") \
+        .select("id, blood_group, donor_types, last_donation_date") \
+        .eq("is_available", True) \
+        .execute()
+
+    alerted = 0
+    today = date.today()
+
+    for d in (donors_res.data or []):
+        if d["id"] in already_matched:
+            continue
+        if "platelet" not in (d.get("donor_types") or []):
+            continue
+        if blood_group and not blood_compatible(d.get("blood_group", ""), blood_group):
+            continue
+        # Check 14-day gap
+        if d.get("last_donation_date"):
+            last = date.fromisoformat(d["last_donation_date"])
+            if (today - last).days < 14:
+                continue
+
+        notify(
+            user_id    = d["id"],
+            title      = f"🚨 CRITICAL Platelet Alert — {blood_group} Urgently Needed",
+            message    = (
+                f"{hosp_name}, {hosp_city} has a critical unmatched platelet request. "
+                f"Please log in and donate if you are eligible."
+            ),
+            notif_type = "blood_request"
+        )
+        alerted += 1
+
+    return {"success": True, "alerted": alerted}
+
+
+# ── POST /platelet/request-donor ── Hospital directly requests a specific donor ─
+
+class DirectDonorRequestBody(BaseModel):
+    hospital_id: str
+    donor_id: str
+    request_id: str
+    message: Optional[str] = None
+
+
+@router.post("/request-donor")
+def request_specific_platelet_donor(body: DirectDonorRequestBody):
+    """Hospital directly targets a specific apheresis donor for a request."""
+    # Validate hospital
+    hosp_res = supabase.table("hospitals") \
+        .select("id, name") \
+        .eq("id", body.hospital_id) \
+        .execute()
+    if not hosp_res.data:
+        raise HTTPException(status_code=403, detail="Hospital not found.")
+    hosp_name = hosp_res.data[0]["name"]
+
+    # Validate donor
+    donor_res = supabase.table("donors") \
+        .select("id, name, last_donation_date") \
+        .eq("id", body.donor_id) \
+        .execute()
+    if not donor_res.data:
+        raise HTTPException(status_code=404, detail="Donor not found.")
+    donor = donor_res.data[0]
+    donor_name = donor["name"]
+
+    # 14-day eligibility check
+    if donor.get("last_donation_date"):
+        last = date.fromisoformat(donor["last_donation_date"])
+        days_gap = (date.today() - last).days
+        if days_gap < 14:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{donor_name} donated {days_gap} days ago and is not yet eligible (14-day gap required)."
+            )
+
+    # Check if already matched
+    existing = supabase.table("platelet_matches") \
+        .select("id, status") \
+        .eq("request_id", body.request_id) \
+        .eq("donor_id", body.donor_id) \
+        .execute()
+    if existing.data and existing.data[0].get("status") in ("pending", "accepted", "confirmed"):
+        raise HTTPException(status_code=409, detail=f"{donor_name} is already linked to this request.")
+
+    # Create match record
+    match_note = body.message or f"Directly requested by {hosp_name}"
+    match_res = supabase.table("platelet_matches").insert({
+        "request_id": body.request_id,
+        "donor_id":   body.donor_id,
+        "status":     "pending",
+        "notes":      match_note,
+    }).execute()
+
+    if not match_res.data:
+        raise HTTPException(status_code=500, detail="Failed to create match.")
+
+    # Notify donor
+    notify(
+        user_id    = body.donor_id,
+        title      = f"🩸 {hosp_name} is requesting you for platelet apheresis!",
+        message    = match_note + " Please check your PlateletAlert dashboard and respond.",
+        notif_type = "blood_request"
+    )
+
+    # Notify hospital
+    notify(
+        user_id    = body.hospital_id,
+        title      = "✅ Apheresis Request Sent",
+        message    = f"Your platelet request was sent to {donor_name}. They will be notified.",
+        notif_type = "blood_response"
+    )
+
+    return {
+        "success":   True,
+        "match_id":  match_res.data[0]["id"],
+        "message":   f"Direct apheresis request sent to {donor_name}."
+    }

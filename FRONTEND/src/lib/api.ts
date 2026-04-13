@@ -150,9 +150,9 @@ export interface ThalDashboardStats {
 }
 
 export interface PlateletRequest {
-    id: string; patient: string; cancer: string; group: string;
+    id: string; patient: string; real_name?: string; cancer: string; group: string;
     units: number; expiry: string; urgency: string;
-    hospital: string; hospital_city: string;
+    hospital: string; hospital_city: string; hospital_id: string;
     days_left: number; hours_left: number; is_critical: boolean;
 }
 
@@ -171,13 +171,24 @@ export interface PlateletMatch {
     donor_city: string;
     donor_trust: number;
     created_at: string;
+    responded_at?: string;
+    notes?: string;
     // For donor view
     hospital?: string;
     city?: string;
+    contact?: string;
     cancer?: string;
     group?: string;
     units?: number;
     urgency?: string;
+}
+
+export interface PlateletDashboard {
+    open_requests: number;
+    expiring_24h: number;
+    apheresis_donors: number;
+    pending_matches: number;
+    completed_this_week: number;
 }
 
 export interface MarrowMatch {
@@ -441,11 +452,6 @@ export const api = {
     },
 
 
-    // ── PlateletAlert ───────────────────────────────────────────────────────────
-
-    // ── ADD THESE to the api.platelet section in api.ts ──────────────────────────
-    // Find your existing api.platelet object and add/replace these methods:
-
     platelet: {
         getOpenRequests: (params?: {
             user_id?: string;
@@ -475,19 +481,26 @@ export const api = {
             hospital_id: string;
         }) => post<{ success: boolean; request_id: string }>("/platelet/requests", body),
 
-        // ── NEW: Match endpoints ──
-
         createMatch: (body: { request_id: string; donor_id: string }) =>
             post<{ success: boolean; match_id: string }>("/platelet/matches", body),
 
-        updateMatch: (matchId: string, body: { status: string; donor_id: string }) =>
-            patch<{ success: boolean }>(`/platelet/matches/${matchId}`, body),
+        updateMatch: (matchId: string, body: { status: string; donor_id: string; appointment_time?: string; notes?: string; trust_rating?: number }) =>
+            patch<{ success: boolean; appointment_time?: string }>(`/platelet/matches/${matchId}`, body),
 
         getDonorMatches: (donorId: string) =>
             get<PlateletMatch[]>(`/platelet/matches/donor/${donorId}`),
 
         getHospitalMatches: (hospitalId: string) =>
             get<PlateletMatch[]>(`/platelet/matches/hospital/${hospitalId}`),
+
+        getDashboard: (params?: { user_id?: string }) =>
+            get<PlateletDashboard>(`/platelet/dashboard`, params),
+
+        triggerEscalation: (requestId: string) =>
+            post<{ success: boolean; alerted: number }>(`/platelet/escalate/${requestId}`),
+
+        requestDonor: (body: { hospital_id: string; donor_id: string; request_id: string; message?: string }) =>
+            post<{ success: boolean; match_id: string; message: string }>(`/platelet/request-donor`, body),
     },
 
     // ── MarrowMatch ─────────────────────────────────────────────────────────────
