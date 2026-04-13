@@ -267,9 +267,13 @@ def login(req: LoginRequest):
             profile = p.data
             redirect = "/dashboard?role=hospital"
     except Exception as e:
-        # Profile not found in DB — login still succeeds, but profile will be None
+        # Profile not found in DB means they are trying to log in with the wrong role
         print(f"[login] Profile lookup failed for {req.role} {user_id}: {e}")
-        profile = None
+        error_msg = "No donor profile found." if req.role == "donor" else "No hospital profile found."
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Invalid login portal: {error_msg} Are you trying to log in as a {'hospital' if req.role == 'donor' else 'donor'}?"
+        )
 
     return {
         "success": True,
