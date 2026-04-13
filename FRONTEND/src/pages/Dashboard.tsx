@@ -165,10 +165,26 @@ function DonorDashboard() {
   const userId = getCurrentUserId();
   useEffect(() => {
     if (!userId) { setHistoryLoading(false); return; }
-    api.blood.getDonorHistory(userId)
-      .then((data: any) => setDonorHistory(data))
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false));
+    Promise.allSettled([
+      api.blood.getDonorHistory(userId),
+      api.platelet.getDonorMatches(userId)
+    ]).then(([bloodRes, plateletRes]) => {
+      let merged: any[] = [];
+      if (bloodRes.status === "fulfilled") merged = merged.concat(bloodRes.value);
+      if (plateletRes.status === "fulfilled") {
+        const platMapped = plateletRes.value.map(m => ({
+          created_at: m.created_at,
+          responded_at: m.responded_at,
+          urgency: m.urgency,
+          hospital: m.hospital,
+          status: m.status,
+          type: "platelet"
+        }));
+        merged = merged.concat(platMapped);
+      }
+      merged.sort((a, b) => new Date(b.responded_at || b.created_at).getTime() - new Date(a.responded_at || a.created_at).getTime());
+      setDonorHistory(merged);
+    }).finally(() => setHistoryLoading(false));
   }, [userId]);
 
   return (
@@ -283,7 +299,7 @@ function DonorDashboard() {
                     {row.responded_at ? new Date(row.responded_at).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : new Date(row.created_at).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })}
                   </td>
                   <td className="font-body text-sm px-4 py-3 font-medium">
-                    🩸 {row.urgency?.charAt(0) + row.urgency?.slice(1).toLowerCase()} Blood
+                    {row.type === "platelet" ? "⏱️ Platelet" : "🩸 Blood"}
                   </td>
                   <td className="font-body text-sm px-4 py-3 text-muted-foreground">{row.hospital || "—"}</td>
                   <td className="px-4 py-3">
