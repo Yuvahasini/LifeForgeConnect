@@ -1,20 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Building2, AlertTriangle, Clock, CheckCircle, Package, TrendingUp, Users,
-  X, Loader2, Phone, MapPin, Calendar, Truck
+  Building2, AlertTriangle, Clock, CheckCircle, Package, TrendingUp,
+  X, Loader2, MapPin, Calendar, Truck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { MilkHospitalDashboard as DashboardType, api, getCurrentUserId } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -26,13 +19,13 @@ interface MilkHospitalDashboardProps {
 }
 
 // Match status progression
-const MATCH_STATUSES = {
-  pending: { label: "Pending", color: "bg-amber-100 text-amber-700", next: "accepted" },
-  accepted: { label: "Accepted", color: "bg-green-100 text-green-700", next: "pickup_scheduled" },
-  pickup_scheduled: { label: "Pickup Scheduled", color: "bg-blue-100 text-blue-700", next: "collected" },
-  collected: { label: "Collected", color: "bg-purple-100 text-purple-700", next: "delivered" },
-  delivered: { label: "Delivered", color: "bg-secondary/15 text-secondary", next: null },
-  declined: { label: "Declined", color: "bg-red-100 text-red-700", next: null },
+const MATCH_STATUSES: Record<string, { label: string; color: string; next: string | null }> = {
+  pending:          { label: "Pending",          color: "bg-amber-100 text-amber-700",    next: "accepted" },
+  accepted:         { label: "Accepted",         color: "bg-green-100 text-green-700",    next: "pickup_scheduled" },
+  pickup_scheduled: { label: "Pickup Scheduled", color: "bg-blue-100 text-blue-700",      next: "collected" },
+  collected:        { label: "Collected",        color: "bg-purple-100 text-purple-700",  next: "delivered" },
+  delivered:        { label: "Delivered",        color: "bg-secondary/15 text-secondary", next: null },
+  declined:         { label: "Declined",         color: "bg-red-100 text-red-700",        next: null },
 };
 
 export default function MilkHospitalDashboard({
@@ -45,7 +38,7 @@ export default function MilkHospitalDashboard({
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
   const [pickupDate, setPickupDate] = useState("");
   const [pickupTime, setPickupTime] = useState("10:00");
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
   if (!dashboard) {
     return (
@@ -56,85 +49,99 @@ export default function MilkHospitalDashboard({
     );
   }
 
+  // Schedule pickup for an accepted match
   const handleSchedulePickup = async () => {
     if (!selectedMatch || !pickupDate) {
       toast.error("Please select a pickup date");
       return;
     }
-
-    setIsUpdating(true);
+    setIsUpdating(selectedMatch.id);
     try {
-      // Update match status to pickup_scheduled
       await api.milk.updateMatchStatus(selectedMatch.id, {
         status: "pickup_scheduled",
         pickup_date: pickupDate,
         pickup_time: pickupTime,
       });
-      toast.success("Pickup scheduled! Donor will be notified.");
+      toast.success("Pickup scheduled! Donor has been notified.");
       setShowPickupModal(false);
       setSelectedMatch(null);
+      setPickupDate("");
       onRefresh();
     } catch (e: any) {
       toast.error(e.message || "Failed to schedule pickup");
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(null);
     }
   };
 
+  // Mark donation as collected
   const handleMarkCollected = async (match: any) => {
-    setIsUpdating(true);
+    setIsUpdating(match.id);
     try {
       await api.milk.updateMatchStatus(match.id, { status: "collected" });
-      toast.success("Marked as collected!");
+      toast.success("Marked as collected! Donor has been notified.");
       onRefresh();
     } catch (e: any) {
       toast.error(e.message || "Failed to update status");
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(null);
     }
   };
 
+  // Log donation and mark as delivered (Milk Passport)
   const handleLogDonation = async (match: any) => {
     const hospitalId = getCurrentUserId();
-    if (!hospitalId) return;
+    if (!hospitalId) {
+      toast.error("Please login as hospital");
+      return;
+    }
 
-    setIsUpdating(true);
+    // FIX: match.donor_id is now returned by the backend in matched_donors
+    const donorId = match.donor_id;
+    if (!donorId) {
+      toast.error("Donor information missing. Please refresh and try again.");
+      return;
+    }
+
+    setIsUpdating(match.id);
     try {
-      // Create donation record
+      // Create Milk Passport donation record
       const result = await api.milk.createDonation({
-        donor_id: match.donor_id || match.id,
+        donor_id: donorId,
         request_id: match.request_id,
-        collection_date: new Date().toISOString().split('T')[0],
+        collection_date: new Date().toISOString().split("T")[0],
         volume_ml: match.quantity_ml || 200,
         receiving_hospital_id: hospitalId,
+        pasteurized: false,
       });
 
-      // Update match status to delivered
+      // Mark match as delivered
       await api.milk.updateMatchStatus(match.id, { status: "delivered" });
 
-      toast.success(`Donation logged! Passport: ${result.passport_id}`);
+      toast.success(`Donation logged! Passport ID: ${result.passport_id}`);
       onRefresh();
     } catch (e: any) {
       toast.error(e.message || "Failed to log donation");
+      console.error("[handleLogDonation] error:", e);
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(null);
     }
   };
 
-  const getStatusConfig = (status: string) => {
-    return MATCH_STATUSES[status as keyof typeof MATCH_STATUSES] || MATCH_STATUSES.pending;
-  };
+  const getStatusConfig = (status: string) =>
+    MATCH_STATUSES[status] || MATCH_STATUSES.pending;
 
   return (
     <div className="space-y-8">
-      {/* Stats row */}
+
+      {/* ── Stats row ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
-          { label: "Active Requests", value: dashboard.stats.active_requests, icon: AlertTriangle, color: "text-blood" },
-          { label: "Pending Matches", value: dashboard.stats.pending_matches, icon: Clock, color: "text-amber-500" },
-          { label: "Accepted", value: dashboard.stats.accepted_matches, icon: CheckCircle, color: "text-secondary" },
-          { label: "Total Received", value: `${(dashboard.stats.total_received_ml / 1000).toFixed(1)}L`, icon: Package, color: "text-milk" },
-          { label: "Donations", value: dashboard.stats.donations_received, icon: TrendingUp, color: "text-purple-500" },
+          { label: "Active Requests",  value: dashboard.stats.active_requests,                          icon: AlertTriangle, color: "text-blood"      },
+          { label: "Pending Matches",  value: dashboard.stats.pending_matches,                          icon: Clock,         color: "text-amber-500"  },
+          { label: "Accepted",         value: dashboard.stats.accepted_matches,                          icon: CheckCircle,   color: "text-secondary"  },
+          { label: "Total Received",   value: `${(dashboard.stats.total_received_ml / 1000).toFixed(1)}L`, icon: Package,    color: "text-milk"       },
+          { label: "Donations",        value: dashboard.stats.donations_received,                        icon: TrendingUp,    color: "text-purple-500" },
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-card rounded-2xl border p-4 shadow-sm">
             <Icon className={`w-5 h-5 ${color} mb-2`} />
@@ -145,7 +152,8 @@ export default function MilkHospitalDashboard({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Active Requests */}
+
+        {/* ── Active Requests ─────────────────────────────────────────── */}
         <div className="rounded-2xl border bg-card p-6 shadow-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-display font-bold">Active Requests</h3>
@@ -160,14 +168,14 @@ export default function MilkHospitalDashboard({
               {dashboard.active_requests.map((req) => (
                 <div key={req.id} className="p-3 rounded-xl bg-muted/30 flex items-center justify-between">
                   <div>
-                    <p className="font-body font-semibold">{req.infant_ref}</p>
+                    <p className="font-body font-semibold text-sm">{req.infant_ref}</p>
                     <p className="font-body text-xs text-muted-foreground">
-                      {req.volume_ml}ml/day -
+                      {req.volume_ml}ml/day —{" "}
                       <span className={
-                        req.urgency === "critical" ? " text-blood font-bold" :
-                        req.urgency === "urgent" ? " text-amber-600" : ""
+                        req.urgency === "critical" ? "text-blood font-bold" :
+                        req.urgency === "urgent"   ? "text-amber-600 font-semibold" : ""
                       }>
-                        {" "}{req.urgency?.toUpperCase()}
+                        {req.urgency?.toUpperCase()}
                       </span>
                     </p>
                   </div>
@@ -184,7 +192,7 @@ export default function MilkHospitalDashboard({
           )}
         </div>
 
-        {/* Matched Donors with Workflow Actions */}
+        {/* ── Matched Donors — Coordination Workflow ─────────────────── */}
         <div className="rounded-2xl border bg-card p-6 shadow-card">
           <h3 className="font-display font-bold mb-4 flex items-center gap-2">
             Matched Donors
@@ -193,11 +201,12 @@ export default function MilkHospitalDashboard({
             </Badge>
           </h3>
           {dashboard.matched_donors.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No matches yet</p>
+            <p className="text-muted-foreground text-sm">No matches yet. Use "Find Matches" on an active request.</p>
           ) : (
             <div className="space-y-3">
-              {dashboard.matched_donors.map((m) => {
+              {dashboard.matched_donors.map((m: any) => {
                 const statusConfig = getStatusConfig(m.status);
+                const busy = isUpdating === m.id;
                 return (
                   <div key={m.id} className="p-4 rounded-xl bg-muted/30 border">
                     <div className="flex items-center justify-between mb-2">
@@ -212,53 +221,76 @@ export default function MilkHospitalDashboard({
                           <MapPin className="w-3 h-3" /> {m.city}
                           {m.quantity_ml && <span className="ml-2">• {m.quantity_ml}ml/day</span>}
                         </p>
+                        {/* Show scheduled pickup info */}
+                        {m.status === "pickup_scheduled" && m.pickup_date && (
+                          <p className="font-body text-xs text-blue-600 mt-1 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            Pickup: {m.pickup_date}{m.pickup_time ? ` at ${m.pickup_time}` : ""}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Action buttons based on status */}
+                    {/* Action buttons based on current status */}
                     <div className="flex gap-2 mt-3">
                       {m.status === "accepted" && (
                         <Button
                           size="sm"
                           variant="outline"
                           className="flex-1 text-xs"
+                          disabled={busy}
                           onClick={() => {
                             setSelectedMatch(m);
                             setShowPickupModal(true);
                           }}
                         >
-                          <Calendar className="w-3 h-3 mr-1" /> Schedule Pickup
+                          <Calendar className="w-3 h-3 mr-1" />
+                          Schedule Pickup
                         </Button>
                       )}
+
                       {m.status === "pickup_scheduled" && (
                         <Button
                           size="sm"
                           variant="outline"
                           className="flex-1 text-xs"
+                          disabled={busy}
                           onClick={() => handleMarkCollected(m)}
-                          disabled={isUpdating}
                         >
-                          <Package className="w-3 h-3 mr-1" /> Mark Collected
+                          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+                            <><Package className="w-3 h-3 mr-1" /> Mark Collected</>
+                          )}
                         </Button>
                       )}
+
                       {m.status === "collected" && (
                         <Button
                           size="sm"
                           className="flex-1 text-xs bg-secondary text-white"
+                          disabled={busy}
                           onClick={() => handleLogDonation(m)}
-                          disabled={isUpdating}
                         >
-                          <CheckCircle className="w-3 h-3 mr-1" /> Log & Complete
+                          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+                            <><CheckCircle className="w-3 h-3 mr-1" /> Log & Complete</>
+                          )}
                         </Button>
                       )}
+
                       {m.status === "pending" && (
                         <p className="text-xs text-muted-foreground italic">
-                          Waiting for donor response...
+                          Waiting for donor to respond...
                         </p>
                       )}
+
                       {m.status === "delivered" && (
                         <p className="text-xs text-secondary font-semibold flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" /> Donation completed
+                          <CheckCircle className="w-3 h-3" /> Donation completed ✓
+                        </p>
+                      )}
+
+                      {m.status === "declined" && (
+                        <p className="text-xs text-red-500 italic">
+                          Donor declined. Try finding other matches.
                         </p>
                       )}
                     </div>
@@ -270,11 +302,11 @@ export default function MilkHospitalDashboard({
         </div>
       </div>
 
-      {/* Donation History */}
+      {/* ── Donation History ─────────────────────────────────────────────── */}
       <div className="rounded-2xl border bg-card p-6 shadow-card">
         <h3 className="font-display font-bold mb-4">Recent Donations Received</h3>
         {dashboard.donation_history.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No donation history</p>
+          <p className="text-muted-foreground text-sm">No donation history yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -305,7 +337,7 @@ export default function MilkHospitalDashboard({
         )}
       </div>
 
-      {/* Pickup Scheduling Modal */}
+      {/* ── Pickup Scheduling Modal ──────────────────────────────────────── */}
       <AnimatePresence>
         {showPickupModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -318,12 +350,10 @@ export default function MilkHospitalDashboard({
               <div className="bg-milk p-6 flex justify-between items-center">
                 <div>
                   <h3 className="font-display text-xl font-bold">Schedule Pickup</h3>
-                  <p className="text-foreground/70 text-xs font-body">
-                    {selectedMatch?.donor_name}
-                  </p>
+                  <p className="text-foreground/70 text-xs font-body">{selectedMatch?.donor_name}</p>
                 </div>
                 <button
-                  onClick={() => setShowPickupModal(false)}
+                  onClick={() => { setShowPickupModal(false); setSelectedMatch(null); }}
                   className="p-2 hover:bg-white/20 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -333,14 +363,14 @@ export default function MilkHospitalDashboard({
               <div className="p-6 space-y-4">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">
-                    Pickup Date
+                    Pickup Date *
                   </Label>
                   <Input
                     type="date"
                     className="rounded-xl"
                     value={pickupDate}
                     onChange={(e) => setPickupDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={new Date().toISOString().split("T")[0]}
                   />
                 </div>
 
@@ -357,18 +387,18 @@ export default function MilkHospitalDashboard({
                 </div>
 
                 <p className="font-body text-[11px] text-muted-foreground italic bg-milk/10 p-3 rounded-xl">
-                  The donor will receive an SMS and in-app notification with pickup details.
+                  The donor will receive an SMS and in-app notification with these pickup details.
                 </p>
 
                 <Button
                   onClick={handleSchedulePickup}
-                  disabled={isUpdating || !pickupDate}
+                  disabled={isUpdating !== null || !pickupDate}
                   className="w-full bg-milk text-foreground font-bold h-12 rounded-xl"
                 >
-                  {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                    <>
-                      <Truck className="w-4 h-4 mr-2" /> Confirm Pickup
-                    </>
+                  {isUpdating ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <><Truck className="w-4 h-4 mr-2" /> Confirm Pickup</>
                   )}
                 </Button>
               </div>
