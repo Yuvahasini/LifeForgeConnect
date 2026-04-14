@@ -206,8 +206,8 @@ export interface MilkDonor {
 }
 
 export interface MilkBankRow {
-    id: string; from: string; pasteurized: string;
-    expiry: string; qty: string; status: string; type?: string;
+    id: string; from: string; donor_id?: string; pasteurized: string;
+    expiry: string; qty: string; status: string; cold_chain?: string; type?: string;
 }
 
 export interface MilkShortageAlert {
@@ -247,13 +247,21 @@ export interface MilkHospitalDashboard {
         accepted_matches: number; total_received_ml: number;
         donations_received: number;
     };
+    // BUG FIX 1: status field added — required for the frontend filter
+    // .filter(r => ["open", "donor_contacted"].includes(r.status))
     active_requests: Array<{
-        id: string; infant_ref: string; volume_ml: number;
-        urgency: string; created_at: string;
+        id: string;
+        infant_ref: string;
+        volume_ml: number;
+        urgency: string;
+        status: string;       // ← FIX: was missing, caused filter to always return []
+        created_at: string;
     }>;
     matched_donors: Array<{
-        id: string; donor_name: string; city: string;
+        id: string; donor_id: string; milk_donor_id?: string;
+        donor_name: string; city: string;
         quantity_ml: number; status: string; request_id: string;
+        pickup_date?: string; pickup_time?: string;
     }>;
     donation_history: Array<{
         passport_id: string; donor_name: string; volume_ml: number;
@@ -327,13 +335,13 @@ export const api = {
             localStorage.setItem("lf_token", data.access_token);
             localStorage.setItem("lf_user_id", data.user_id);
             localStorage.setItem("lf_role", data.role);
-            
+
             // Critical sync with AuthContext keys
             localStorage.setItem("lfc_token", data.access_token);
             localStorage.setItem("lfc_user_id", data.user_id);
             localStorage.setItem("lfc_role", data.role);
             localStorage.setItem("lfc_orgType", data.role);
-            
+
             return data;
         },
 
@@ -372,35 +380,27 @@ export const api = {
         getOpenRequests: () =>
             get<BloodRequest[]>("/blood/requests/open"),
 
-        /** Verified hospital posts a general broadcast request */
         postRequest: (body: { hospital_id: string; blood_group: string; units: number; urgency: string; notes?: string }) =>
             post("/blood/requests", body),
 
-        /** Hospital targets a specific verified donor */
         requestDonor: (body: { hospital_id: string; donor_id: string; blood_group: string; units: number; urgency: string }) =>
             post("/blood/donors/request", body),
 
-        /** Donor accepts or declines a request — pending → accepted | declined */
         respondToRequest: (body: { request_id: string; donor_id: string; action: "accept" | "decline" }) =>
             post("/blood/respond", body),
 
-        /** Donor sees compatible open requests (verified donors only) */
         getRequestsForDonor: (donorId: string) =>
             get<BloodRequest[]>("/blood/requests/for-donor", { donor_id: donorId }),
 
-        /** Hospital request management table */
         getHospitalRequests: (hospitalId: string) =>
             get("/blood/requests/hospital", { hospital_id: hospitalId }),
 
-        /** Donor history: received / accepted / declined / fulfilled */
         getDonorHistory: (donorId: string) =>
             get("/blood/history/donor", { donor_id: donorId }),
 
-        /** Hospital marks a request fulfilled */
         fulfillRequest: (requestId: string, hospitalId: string) =>
             req("POST", `/blood/requests/${requestId}/fulfill`, undefined, { hospital_id: hospitalId }),
 
-        /** Hospital manually closes a request */
         closeRequest: (requestId: string, hospitalId: string) =>
             req("POST", `/blood/requests/${requestId}/close`, undefined, { hospital_id: hospitalId }),
 
@@ -443,9 +443,6 @@ export const api = {
 
     // ── PlateletAlert ───────────────────────────────────────────────────────────
 
-    // ── ADD THESE to the api.platelet section in api.ts ──────────────────────────
-    // Find your existing api.platelet object and add/replace these methods:
-
     platelet: {
         getOpenRequests: (params?: {
             user_id?: string;
@@ -474,8 +471,6 @@ export const api = {
             urgency: string;
             hospital_id: string;
         }) => post<{ success: boolean; request_id: string }>("/platelet/requests", body),
-
-        // ── NEW: Match endpoints ──
 
         createMatch: (body: { request_id: string; donor_id: string }) =>
             post<{ success: boolean; match_id: string }>("/platelet/matches", body),
@@ -593,11 +588,9 @@ export const api = {
         respondToMatch: (matchId: string, body: { donor_id: string; status: "accepted" | "declined" }) =>
             post<{ success: boolean; status: string; message: string }>(`/milk/matches/${matchId}/respond`, body),
 
-        // Get matches for a donor (to show pending/active matches)
         getDonorMatches: (donorId: string) =>
             get<any[]>(`/milk/matches/donor/${donorId}`),
 
-        // Update match status (for hospital workflow: accepted -> pickup_scheduled -> collected -> delivered)
         updateMatchStatus: (matchId: string, body: {
             status: string;
             pickup_date?: string;
@@ -618,10 +611,23 @@ export const api = {
             notes?: string;
         }) => post<{ success: boolean; passport_id: string; donation_id: string; expiry_date: string; message: string }>("/milk/donations", body),
 
+        // logDonation is an alias for createDonation (used by MilkBridge.tsx)
+        logDonation: (body: {
+            donor_id: string;
+            request_id?: string;
+            collection_date: string;
+            volume_ml: number;
+            pasteurized?: boolean;
+            pasteurization_date?: string;
+            pasteurization_method?: string;
+            receiving_hospital_id?: string;
+            receiving_infant_ref?: string;
+            notes?: string;
+        }) => post<{ success: boolean; passport_id: string; donation_id: string; expiry_date: string; message: string }>("/milk/donations", body),
+
         getDonation: (passportId: string) =>
             get<MilkDonation>(`/milk/donations/${passportId}`),
 
-        // Hospital dashboard
         getHospitalDashboard: (hospitalId: string) =>
             get<MilkHospitalDashboard>(`/milk/dashboard/hospital/${hospitalId}`),
     },
@@ -670,8 +676,6 @@ export interface AIChatMessage {
 
 /**
  * Stream a response from LifeForge AI.
- * Calls the backend /ai/chat endpoint which proxies to Gemini.
- * Returns a ReadableStream reader or falls back to sync.
  */
 export async function streamAIChat(
     messages: AIChatMessage[],
@@ -682,7 +686,6 @@ export async function streamAIChat(
 ) {
     const url = `${BASE}/ai/chat`;
 
-    // Timeout after 30s if no response at all
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
 
