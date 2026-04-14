@@ -20,6 +20,7 @@ const MODULE_CONFIG: Record<string, {
   genderRestricted?: "male" | "female";
 }> = {
   blood: { key: "blood", label: "Blood Donation", emoji: "🩸", path: "/blood-bridge", color: "text-blood", bg: "bg-blood/10", border: "border-blood/30", gradient: "from-red-600 to-rose-700", description: "Match with patients who urgently need your blood type." },
+  thal: { key: "thal", label: "ThalCare", emoji: "💉", path: "/thal-care", color: "text-thal", bg: "bg-thal/10", border: "border-thal/30", gradient: "from-purple-500 to-indigo-600", description: "Help thalassemia patients with their recurring transfusion needs." },
   platelet: { key: "platelet", label: "Platelet Donation", emoji: "⏱️", path: "/platelet-alert", color: "text-platelet", bg: "bg-platelet/10", border: "border-platelet/30", gradient: "from-amber-500 to-orange-600", description: "5-day viability window. Cancer patients depend on you." },
   milk: { key: "milk", label: "Milk Donation", emoji: "🍼", path: "/milk-bridge", color: "text-milk", bg: "bg-milk/10", border: "border-milk/30", gradient: "from-pink-400 to-rose-500", description: "Donate breast milk to save premature infants in NICUs.", genderRestricted: "female" },
 };
@@ -159,6 +160,7 @@ function SimpleModulePanel({ modKey }: { modKey: string }) {
   if (!mod) return null;
   const tips: Record<string, string[]> = {
     milk: ["Pump or hand-express milk within 6 hours of feeding", "Store in sterile containers and keep refrigerated", "Milk bank will arrange pickup from your location"],
+    thal: ["Thalassemia patients require regular blood transfusions", "Join a patient's care network to become their dedicated donor", "Recurring commitments heavily improve their quality of life"],
   };
   return (
     <div className={`rounded-2xl border-2 ${mod.border} bg-card overflow-hidden`}>
@@ -195,7 +197,10 @@ function DonorDashboard() {
   const isVerified = profile?.is_verified ?? false;
   const trustScore = profile?.trust_score ? (profile.trust_score / 10).toFixed(1) : "5.0";
   const donorTypes = (profile?.donor_types || []) as string[];
-  const activeModules = Object.values(MODULE_CONFIG).filter(m => donorTypes.includes(m.key));
+  const activeModules = Object.values(MODULE_CONFIG).filter(m => {
+    if (m.key === "thal" && donorTypes.includes("blood")) return true;
+    return donorTypes.includes(m.key);
+  });
   useEffect(() => { if (activeModules.length > 0 && !activeModule) setActiveModule(activeModules[0].key); }, [donorTypes]);
 
   const userId = getCurrentUserId();
@@ -299,7 +304,7 @@ function DonorDashboard() {
           <motion.div key={activeModule} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
             {activeModule === "blood" && <BloodModulePanel />}
             {activeModule === "platelet" && <PlateletModulePanel />}
-            {(activeModule === "milk") && <SimpleModulePanel modKey={activeModule} />}
+            {(activeModule === "milk" || activeModule === "thal") && <SimpleModulePanel modKey={activeModule} />}
           </motion.div>
         )}
       </AnimatePresence>
