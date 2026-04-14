@@ -35,6 +35,7 @@ function DonorRegister() {
   const [gender, setGender] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [otpError, setOtpError] = useState("");
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -67,19 +68,22 @@ function DonorRegister() {
     setOtpVerified(false);
     setEnteredOtp("");
     setError("");
+    setOtpError("");
   };
 
   const handleVerifyOtp = () => {
+    setOtpError("");
     if (!generatedOtp || !otpExpiry) return;
     if (Date.now() > otpExpiry) {
-      setError("OTP Expired! Please request a new one.");
+      setOtpError("OTP Expired! Please request a new one.");
       return;
     }
     if (enteredOtp === generatedOtp) {
       setOtpVerified(true);
+      setOtpError("");
       setError("");
     } else {
-      setError("Incorrect OTP!");
+      setOtpError("Incorrect OTP! Please try again.");
     }
   };
 
@@ -164,11 +168,12 @@ function DonorRegister() {
             <div className="space-y-1.5">
               <Label className="font-body font-semibold text-sm">Enter OTP</Label>
               <div className="flex gap-2">
-                <Input placeholder="6-digit OTP" maxLength={6} value={enteredOtp} onChange={(e) => { setEnteredOtp(e.target.value); setError(""); }} className="h-11 rounded-xl font-body tracking-[0.3em] text-center flex-1" />
+                <Input placeholder="6-digit OTP" maxLength={6} value={enteredOtp} onChange={(e) => { setEnteredOtp(e.target.value); setOtpError(""); }} className="h-11 rounded-xl font-body tracking-[0.3em] text-center flex-1" />
                 <Button type="button" onClick={handleVerifyOtp} className="h-11 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-body">
                   Verify
                 </Button>
               </div>
+              {otpError && <p className="font-body text-xs text-blood font-semibold mt-1">{otpError}</p>}
             </div>
           )}
           {otpVerified && (
