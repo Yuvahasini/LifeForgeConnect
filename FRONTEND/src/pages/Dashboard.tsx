@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, CheckCircle2, AlertCircle, Clock,
   Users, Activity, Plus, Shield, Star,
-  ChevronRight, BarChart3, Loader2, ArrowRight, MapPin, Timer
+  ChevronRight, BarChart3, Loader2, ArrowRight, MapPin, Timer, Phone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,10 +81,22 @@ function BloodModulePanel() {
 
 function PlateletModulePanel() {
   const [requests, setRequests] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const userId = getCurrentUserId();
+  
+  const loadData = () => {
+    Promise.all([
+      api.platelet.getOpenRequests({ user_id: userId || undefined }),
+      userId ? api.platelet.getDonorMatches(userId) : Promise.resolve([])
+    ]).then(([r, m]) => {
+      setRequests(r.slice(0, 3));
+      setMatches(m);
+    }).catch(() => { }).finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    api.platelet.getOpenRequests({ user_id: userId || undefined }).then(r => setRequests(r.slice(0, 3))).catch(() => { }).finally(() => setLoading(false));
+    loadData();
   }, []);
   return (
     <div className="rounded-2xl border-2 border-platelet/20 bg-card overflow-hidden">
@@ -108,9 +120,33 @@ function PlateletModulePanel() {
                   <div className={`font-body text-[11px] font-bold mt-0.5 ${req.is_critical ? "text-blood" : "text-platelet"}`}>⏰ {req.expiry} remaining</div>
                 </div>
                 <Badge className={`text-[10px] border-0 font-body shrink-0 ${req.is_critical ? "bg-blood/15 text-blood" : "bg-platelet/15 text-platelet"}`}>{req.urgency}</Badge>
-                <Button size="sm"
-                  onClick={async () => { try { await api.platelet.createMatch({ request_id: req.id, donor_id: userId! }); toast.success("Donation intent recorded!"); } catch (e: any) { toast.error(e.message); } }}
-                  className="bg-platelet text-white font-body font-semibold rounded-lg text-xs px-3 h-8 shrink-0">Donate</Button>
+                {(() => {
+                  const m = matches.find(x => x.request_id === req.id);
+                  if (m) {
+                    if (m.status === "pending") {
+                      return <Badge className="bg-amber-100 text-amber-700 font-body shrink-0">Pending</Badge>;
+                    }
+                    if ((m.status === "accepted" || m.status === "confirmed") && m.contact && m.contact !== "No Contact") {
+                      return (
+                        <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-xs px-3 h-8 shrink-0 rounded-lg">
+                          <Phone className="w-3.5 h-3.5" /> Call
+                        </a>
+                      );
+                    }
+                    return <Badge className="bg-slate-100 text-slate-600 font-body shrink-0 uppercase">{m.status}</Badge>;
+                  }
+                  return (
+                    <Button size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.platelet.createMatch({ request_id: req.id, donor_id: userId! });
+                          toast.success("Donation intent recorded!");
+                          loadData();
+                        } catch (e: any) { toast.error(e.message); }
+                      }}
+                      className="bg-platelet text-white font-body font-semibold rounded-lg text-xs px-3 h-8 shrink-0">Donate</Button>
+                  );
+                })()}
               </motion.div>
             ))}</div>}
       </div>
