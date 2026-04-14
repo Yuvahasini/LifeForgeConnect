@@ -372,6 +372,12 @@ def update_platelet_match(match_id: str, body: MatchUpdateBody):
         )
         
     elif status == "accepted":
+        # Mark request as in-progress so it's no longer "open"
+        supabase.table("platelet_requests") \
+            .update({"status": "matched"}) \
+            .eq("id", match_data["request_id"]) \
+            .execute()
+
         notify(
             user_id    = hospital_id,
             title      = f"✅ Platelet Match Accepted",
@@ -380,6 +386,12 @@ def update_platelet_match(match_id: str, body: MatchUpdateBody):
         )
         
     elif status == "confirmed":
+        # Ensure request is marked as matched
+        supabase.table("platelet_requests") \
+            .update({"status": "matched"}) \
+            .eq("id", match_data["request_id"]) \
+            .execute()
+
         msg = f"Your apheresis donation appointment is confirmed."
         if body.appointment_time:
             msg += f" Slot: {body.appointment_time}."
