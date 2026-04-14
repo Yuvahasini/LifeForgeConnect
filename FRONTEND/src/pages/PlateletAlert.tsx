@@ -987,10 +987,16 @@ export default function PlateletAlert() {
                                     <XCircle className="w-3 h-3 mr-1" /> Decline
                                   </Button>
                                 )}
-                                {(m.status === "accepted" || m.status === "confirmed") && m.contact && m.contact !== "—" && (
-                                  <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-xs h-8 px-3 rounded-lg">
-                                    <Phone className="w-3.5 h-3.5" /> Call
-                                  </a>
+                                {(m.status === "accepted" || m.status === "confirmed") && (
+                                  m.contact && m.contact !== "No Contact" ? (
+                                    <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-xs h-8 px-3 rounded-lg">
+                                      <Phone className="w-3.5 h-3.5" /> Call
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 justify-center bg-slate-100 text-slate-400 font-body text-xs h-8 px-3 rounded-lg cursor-not-allowed cursor-help" title="Phone number missing">
+                                      <Phone className="w-3.5 h-3.5" /> No Contact
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>
@@ -1063,10 +1069,16 @@ export default function PlateletAlert() {
                                     <Calendar className="w-3 h-3 mr-1" /> Confirm Appt
                                   </Button>
                                 )}
-                                {(m.status === "accepted" || m.status === "confirmed") && m.contact && m.contact !== "—" && (
-                                  <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-[10px] h-8 px-3 rounded-lg">
-                                    <Phone className="w-3 h-3" /> Call
-                                  </a>
+                                {(m.status === "accepted" || m.status === "confirmed") && (
+                                  m.contact && m.contact !== "No Contact" ? (
+                                    <a href={`tel:${m.contact}`} className="inline-flex items-center gap-1.5 justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 font-body text-[10px] h-8 px-3 rounded-lg">
+                                      <Phone className="w-3 h-3" /> Call
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 justify-center bg-slate-100 text-slate-400 font-body text-[10px] h-8 px-3 rounded-lg cursor-not-allowed cursor-help" title="Phone number missing">
+                                      <Phone className="w-3 h-3" /> No Contact
+                                    </span>
+                                  )
                                 )}
                                 {m.status === "confirmed" && (
                                   <Button

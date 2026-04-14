@@ -436,7 +436,7 @@ def get_donor_matches(donor_id: str):
             "urgency":      (req.get("urgency") or "urgent").upper(),
             "hospital":     hospital.get("name", "Unknown"),
             "city":         hospital.get("city", ""),
-            "contact":      hospital.get("contact", "—"),
+            "contact":      hospital.get("contact") or "No Contact",
             "request_id":   m.get("request_id"),
             "patient_name": req.get("patient_name", "Patient"),
         })
@@ -479,7 +479,7 @@ def get_hospital_matches(hospital_id: str):
             "donor_blood":  donor.get("blood_group", "—"),
             "donor_city":   donor.get("city", "—"),
             "donor_trust":  round((donor.get("trust_score", 50) / 100) * 5, 1),
-            "contact":      donor.get("mobile", "—"),
+            "contact":      donor.get("mobile") or "No Contact",
             "created_at":   m["created_at"],
             "responded_at": m.get("responded_at"),
             "notes":        m.get("notes"),
