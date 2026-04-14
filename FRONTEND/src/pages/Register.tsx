@@ -168,9 +168,17 @@ function DonorRegister() {
               <Input placeholder="400001" maxLength={6} value={pincode} onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))} className="h-11 rounded-xl font-body" />
             </div>
           </div>
-          <Button onClick={() => setStep(2)} className="w-full h-12 bg-gradient-primary text-primary-foreground font-body font-bold rounded-xl shadow-primary">
+          <Button onClick={() => {
+            if (!firstName.trim() || !mobile.trim() || !city.trim()) {
+              setError("Please fill in your name, mobile number, and city before continuing.");
+              return;
+            }
+            setError("");
+            setStep(2);
+          }} className="w-full h-12 bg-gradient-primary text-primary-foreground font-body font-bold rounded-xl shadow-primary">
             Continue <ChevronRight className="w-4 h-4 ml-1" />
           </Button>
+          {error && step === 1 && <p className="font-body text-sm text-blood font-semibold text-center">{error}</p>}
         </motion.div>
       )}
 
