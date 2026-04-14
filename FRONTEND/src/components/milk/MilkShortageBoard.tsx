@@ -21,21 +21,26 @@ export default function MilkShortageBoard({
   onFindMatches,
   onRespond,
 }: MilkShortageBoardProps) {
-  const criticalCount = alerts.filter(a => a.urgency === "CRITICAL").length;
+  const criticalCount = alerts.filter(
+    (a) => (a.urgency ?? "").toUpperCase() === "CRITICAL"
+  ).length;
 
-  const getUrgencyColor = (urgency: string) => {
-    switch (urgency) {
+  const normalizedUrgency = (urgency?: string) =>
+    (urgency ?? "NORMAL").toUpperCase();
+
+  const getUrgencyColor = (urgency?: string) => {
+    switch (normalizedUrgency(urgency)) {
       case "CRITICAL":
         return "border-blood/40 bg-blood/10";
       case "URGENT":
-        return "border-amber-500/30 bg-amber-50";
+        return "border-amber-500/30 bg-amber-50 dark:bg-amber-950/20";
       default:
-        return "border-blood/20 bg-blood/5";
+        return "border-border/40 bg-muted/10";
     }
   };
 
-  const getUrgencyBadge = (urgency: string) => {
-    switch (urgency) {
+  const getUrgencyBadge = (urgency?: string) => {
+    switch (normalizedUrgency(urgency)) {
       case "CRITICAL":
         return "bg-blood text-white";
       case "URGENT":
@@ -45,16 +50,23 @@ export default function MilkShortageBoard({
     }
   };
 
+  const isHospital = role === "hospital";
+  const isDonor = role === "donor";
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between px-1">
-        <h3 className="font-display text-sm font-bold uppercase tracking-widest text-muted-foreground">
+        <h3 className="font-display text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
           Critical Shortages
           {criticalCount > 0 && (
-            <Badge className="ml-2 bg-blood/20 text-blood border-0">{criticalCount}</Badge>
+            <Badge className="ml-2 bg-blood/20 text-blood border-0">
+              {criticalCount}
+            </Badge>
           )}
         </h3>
-        {role === "hospital" && onPostShortage && (
+
+        {/* ── Only hospitals can post shortage alerts ── */}
+        {isHospital && onPostShortage && (
           <button
             onClick={onPostShortage}
             className="text-[10px] font-bold text-blood hover:underline uppercase tracking-tighter"
@@ -65,13 +77,15 @@ export default function MilkShortageBoard({
       </div>
 
       {isLoading ? (
-        <div className="p-8 text-center bg-muted/20 rounded-2xl animate-pulse">
+        <div className="p-8 text-center bg-muted/20 rounded-2xl">
           <Loader2 className="w-6 h-6 animate-spin mx-auto text-blood/50" />
         </div>
       ) : alerts.length === 0 ? (
         <div className="p-6 text-center bg-secondary/5 border-2 border-dashed border-secondary/20 rounded-2xl">
           <Sparkles className="w-5 h-5 text-secondary mx-auto mb-2" />
-          <p className="font-body text-xs text-muted-foreground">Stock levels stable across India.</p>
+          <p className="font-body text-xs text-muted-foreground">
+            Stock levels stable across India.
+          </p>
         </div>
       ) : (
         alerts.slice(0, 5).map((alert) => (
@@ -79,20 +93,39 @@ export default function MilkShortageBoard({
             key={alert.id}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className={`rounded-2xl border-2 p-5 shadow-sm ${getUrgencyColor(alert.urgency || "NORMAL")}`}
+            className={`rounded-2xl border-2 p-5 shadow-sm ${getUrgencyColor(alert.urgency)}`}
           >
             <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className={`w-4 h-4 ${alert.urgency === "CRITICAL" ? "text-blood animate-pulse" : "text-amber-600"}`} />
-              <h3 className="font-display text-xs font-bold text-blood uppercase tracking-wide flex-1">{alert.hospital}</h3>
-              <Badge className={`text-[8px] ${getUrgencyBadge(alert.urgency || "NORMAL")}`}>
-                {alert.urgency || "NORMAL"}
+              <AlertTriangle
+                className={`w-4 h-4 ${
+                  normalizedUrgency(alert.urgency) === "CRITICAL"
+                    ? "text-blood animate-pulse"
+                    : "text-amber-600"
+                }`}
+              />
+              <h3 className="font-display text-xs font-bold text-blood uppercase tracking-wide flex-1 truncate">
+                {alert.hospital}
+              </h3>
+              <Badge
+                className={`text-[8px] shrink-0 ${getUrgencyBadge(alert.urgency)}`}
+              >
+                {normalizedUrgency(alert.urgency)}
               </Badge>
             </div>
-            <p className="font-body text-xs text-muted-foreground mb-1">{alert.city}</p>
-            <p className="font-body text-sm font-semibold mb-2">{alert.quantity_needed}</p>
+
+            <p className="font-body text-xs text-muted-foreground mb-1">
+              {alert.city}
+            </p>
+            <p className="font-body text-sm font-semibold mb-2">
+              {alert.quantity_needed}
+            </p>
+
             {alert.infant_name && (
-              <p className="font-body text-[10px] text-muted-foreground mb-2">For: {alert.infant_name}</p>
+              <p className="font-body text-[10px] text-muted-foreground mb-2">
+                For: {alert.infant_name}
+              </p>
             )}
+
             {alert.time_left && (
               <p className="font-body text-[10px] text-muted-foreground mb-3 flex items-center gap-1">
                 <Clock className="w-3 h-3" /> {alert.time_left} remaining
@@ -100,7 +133,8 @@ export default function MilkShortageBoard({
             )}
 
             <div className="flex gap-2">
-              {role === "donor" && onRespond && (
+              {/* Donors can offer to help */}
+              {isDonor && onRespond && (
                 <Button
                   onClick={() => onRespond(alert)}
                   className="flex-1 bg-blood text-white font-body font-bold rounded-xl h-9 hover:bg-blood/90 text-xs"
@@ -108,7 +142,9 @@ export default function MilkShortageBoard({
                   I Can Help
                 </Button>
               )}
-              {role === "hospital" && onFindMatches && (
+
+              {/* Hospitals can find matched donors */}
+              {isHospital && onFindMatches && (
                 <Button
                   onClick={() => onFindMatches(alert)}
                   variant="outline"
@@ -116,6 +152,13 @@ export default function MilkShortageBoard({
                 >
                   Find Donors
                 </Button>
+              )}
+
+              {/* Logged-out / public visitors see a read-only state */}
+              {!isDonor && !isHospital && (
+                <p className="text-[10px] text-muted-foreground italic">
+                  Login to respond to this alert
+                </p>
               )}
             </div>
           </motion.div>
