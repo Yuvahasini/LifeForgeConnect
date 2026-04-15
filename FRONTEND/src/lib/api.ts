@@ -109,7 +109,7 @@ export interface BloodShortage {
 export interface ThalPatient {
     id: string; name: string; age: number | null; group: string;
     hospital: string; hospital_id: string; freq: string; nextDate: string;
-    donor: string; donor_status: string | null;
+    donor: string; donor_status: string | null; donor_mobile?: string | null;
     current_match_id: string | null; current_donor_id: string | null;
     countdown: string; days_until: number | null; is_urgent: boolean;
     is_critical: boolean; needs_match_now: boolean;
@@ -131,7 +131,7 @@ export interface CalendarDay {
 export interface ThalAssignment {
     match_id: string; patient_id: string; patient_name: string;
     blood_group: string; next_transfusion: string; days_until: number | null;
-    countdown: string; frequency: string; hospital: string;
+    countdown: string; frequency: string; hospital: string; hospital_contact?: string | null;
     status: string; assigned_at: string; is_urgent: boolean;
 }
 

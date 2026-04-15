@@ -98,7 +98,7 @@ def get_thal_patients(hospital_id: Optional[str] = None):
         # ── Current assigned donor (pending, accepted, or fulfilled) ─────────
         # Priority: accepted > pending > fulfilled (most recent first)
         match = supabase.table("matches") \
-            .select("donor_id, status, donors(name)") \
+            .select("donor_id, status, donors(name, mobile)") \
             .eq("request_id", p["id"]) \
             .eq("module", "thal") \
             .in_("status", ["pending", "accepted", "fulfilled"]) \
@@ -110,11 +110,14 @@ def get_thal_patients(hospital_id: Optional[str] = None):
         donor_status = None
         current_match_id = None
         current_donor_id = None
+        donor_mobile = None
         if match.data:
             m = match.data[0]
             donor_info = m.get("donors")
             if donor_info:
                 donor_name = donor_info.get("name", "Unmatched")
+                if m.get("status") == "accepted":
+                    donor_mobile = donor_info.get("mobile")
             donor_status = m.get("status")
             current_match_id = m.get("id") if "id" in m else None
             current_donor_id = m.get("donor_id")
@@ -160,6 +163,7 @@ def get_thal_patients(hospital_id: Optional[str] = None):
             "nextDate":        next_date or "—",
             "donor":           donor_name,
             "donor_status":    donor_status,
+            "donor_mobile":    donor_mobile,
             "current_match_id": current_match_id,
             "current_donor_id": current_donor_id,
             "countdown":       countdown_label(due_days),
@@ -717,7 +721,7 @@ def get_donor_assignments(donor_id: str):
     for m in (matches_res.data or []):
         # Get patient details
         patient_res = supabase.table("thal_patients") \
-            .select("name, blood_group, next_transfusion_date, transfusion_frequency_days, hospitals(name, city)") \
+            .select("name, blood_group, next_transfusion_date, transfusion_frequency_days, hospitals(name, city, contact)") \
             .eq("id", m["request_id"]) \
             .single() \
             .execute()
@@ -739,6 +743,7 @@ def get_donor_assignments(donor_id: str):
             "countdown":       countdown_label(due_days),
             "frequency":       f"Every {p.get('transfusion_frequency_days', 21)} days",
             "hospital":        f"{hospital.get('name', '')}, {hospital.get('city', '')}",
+            "hospital_contact": hospital.get("contact") if m["status"] == "accepted" else None,
             "status":          m["status"],
             "assigned_at":     m["created_at"][:10] if m.get("created_at") else "—",
             "is_urgent":       due_days is not None and due_days <= 2,
