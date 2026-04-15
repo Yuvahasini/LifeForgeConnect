@@ -690,9 +690,20 @@ function DonorAssignments({ onRefresh }: { onRefresh: () => void }) {
             )}
 
             {a.status === "accepted" && (
-              <div className="mt-3 bg-green-500/8 border border-green-500/20 rounded-xl px-4 py-2 font-body text-xs text-green-600 flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 shrink-0" />
-                You've confirmed this assignment. The hospital will contact you for scheduling.
+              <div className="mt-4 flex flex-col gap-3">
+                <div className="bg-green-500/8 border border-green-500/20 rounded-xl px-4 py-2 font-body text-xs text-green-600 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  You've confirmed this assignment. The hospital will contact you for scheduling.
+                </div>
+                {a.hospital_contact && (
+                  <a href={`tel:${a.hospital_contact}`} className="w-full">
+                    <Button 
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-body text-xs rounded-lg flex items-center justify-center gap-2"
+                    >
+                      📞 Call Hospital ({a.hospital_contact})
+                    </Button>
+                  </a>
+                )}
               </div>
             )}
           </motion.div>
@@ -1094,6 +1105,17 @@ export default function ThalCare() {
                               >
                                 Find Donor <ChevronRight className="w-3 h-3 ml-1" />
                               </Button>
+                            )}
+
+                            {p.donor_status === "accepted" && p.donor_mobile && (
+                              <a href={`tel:${p.donor_mobile}`} className="w-full mt-2">
+                                <Button 
+                                  size="sm"
+                                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-body text-xs rounded-lg flex items-center justify-center gap-2"
+                                >
+                                  📞 Call Assigned Donor ({p.donor_mobile})
+                                </Button>
+                              </a>
                             )}
                           </>
                         )}
