@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import BloodBridgeMap from "@/components/BloodBridgeMap";
 import { useAuth } from "@/hooks/AuthContext";
 import {
   api, getCurrentUserId, getCurrentRole,
@@ -732,6 +733,9 @@ export default function ThalCare() {
   const [markDoneFor, setMarkDoneFor] = useState<ThalPatientExt | null>(null);
   const [historyFor, setHistoryFor] = useState<ThalPatientExt | null>(null);
 
+  const [mapDonors, setMapDonors] = useState<any[]>([]);
+  const [hospitalLocation, setHospitalLocation] = useState<{lat: number; lng: number; name: string} | null>(null);
+
   // Filter state
   const [filter, setFilter] = useState<"all" | "due_week" | "overdue" | "unmatched">("all");
 
@@ -740,15 +744,31 @@ export default function ThalCare() {
     setErrorData(false);
     const hospitalParam = isHospital ? userId : undefined;
 
+    let hLoc = null;
+    if (isHospital) {
+      try {
+        const profStr = localStorage.getItem("lfc_profile");
+        if (profStr) {
+          const prof = JSON.parse(profStr);
+          if (prof.lat && prof.lng) {
+            hLoc = { lat: prof.lat, lng: prof.lng, name: prof.name || "Hospital" };
+            setHospitalLocation(hLoc);
+          }
+        }
+      } catch(e) {}
+    }
+
     Promise.all([
       apiFetch<ThalPatientExt[]>(`/thal/patients${hospitalParam ? `?hospital_id=${hospitalParam}` : ""}`),
       api.thal.getCalendar(7),
       isHospital ? api.thal.getDashboard(userId) : Promise.resolve(null),
+      isHospital ? api.blood.getDonors({ lat: hLoc?.lat, lng: hLoc?.lng, limit: 100 }) : Promise.resolve([]),
     ])
-      .then(([p, c, d]) => {
+      .then(([p, c, d, bloodDonors]) => {
         setPatients(p);
         setCalendar(c);
         if (d) setDashStats(d);
+        if (bloodDonors) setMapDonors(bloodDonors);
       })
       .catch(() => setErrorData(true))
       .finally(() => setLoadingData(false));
@@ -1131,6 +1151,20 @@ export default function ThalCare() {
                   ))
                 )}
               </div>
+
+              {/* ── Nearby Donors Map (ThalCare spec) ── */}
+              {isHospital && (
+                <div className="mt-8 space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="text-xl">🗺️</div>
+                    <h3 className="font-display text-xl font-bold text-foreground">Nearby Blood Donors</h3>
+                  </div>
+                  <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-card">
+                    <BloodBridgeMap donors={mapDonors} hospitalLocation={hospitalLocation} />
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         </div>
