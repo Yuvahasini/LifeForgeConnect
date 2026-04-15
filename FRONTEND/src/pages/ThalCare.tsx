@@ -28,6 +28,10 @@ interface ThalMatch {
   city: string;
   trust_score: number;
   is_verified: boolean;
+  match_score?: number;
+  days_since_donation?: number | null;
+  lifetime_donations?: number;
+  distance_km?: number | null;
 }
 
 interface MatchResult {
@@ -293,18 +297,39 @@ function FindDonorModal({
               </div>
             ) : (
               <div className="space-y-3">
-                {result.matches.map(d => (
+                {result.matches.map((d, i) => (
                   <div
                     key={d.donor_id}
                     className="flex items-center justify-between gap-3 p-3 rounded-xl border border-thal/20 bg-thal/5"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-thal/15 flex items-center justify-center font-display font-bold text-thal text-sm">
+                      <div className="w-10 h-10 rounded-xl bg-thal/15 flex items-center justify-center font-display font-bold text-thal text-sm relative">
                         {d.blood_group}
+                        {i === 0 && <span className="absolute -top-1 -right-1 text-[10px]">⭐</span>}
                       </div>
                       <div>
-                        <div className="font-body font-semibold text-sm text-foreground">{d.name}</div>
-                        <div className="font-body text-xs text-muted-foreground">{d.city} · Trust {d.trust_score}%</div>
+                        <div className="font-body font-semibold text-sm text-foreground flex items-center gap-1.5">
+                          {d.name}
+                          {d.match_score != null && (
+                            <span className="text-[10px] font-body font-bold text-thal bg-thal/10 px-1.5 py-0.5 rounded-full">
+                              Score {d.match_score}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-body text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                          <span>{d.city}</span>
+                          <span>·</span>
+                          <span>Trust {d.trust_score}%</span>
+                          {d.days_since_donation != null && (
+                            <><span>·</span><span>{d.days_since_donation}d ago</span></>
+                          )}
+                          {(d.lifetime_donations ?? 0) > 0 && (
+                            <><span>·</span><span>{d.lifetime_donations} past</span></>
+                          )}
+                          {d.distance_km != null && (
+                            <><span>·</span><span>{d.distance_km} km</span></>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <Button
@@ -313,7 +338,7 @@ function FindDonorModal({
                       disabled={assigning === d.donor_id || !!success}
                       className="bg-thal text-primary-foreground font-body text-xs rounded-lg shrink-0"
                     >
-                      {assigning === d.donor_id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Assign"}
+                      {assigning === d.donor_id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Request"}
                     </Button>
                   </div>
                 ))}

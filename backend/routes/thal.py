@@ -36,13 +36,15 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from utils.db import supabase
-from utils.matching import days_until, countdown_label, blood_compatible
+from utils.matching import days_until, countdown_label, blood_compatible, haversine, days_since
 from utils.thal_predictor import predict_next_interval, get_smart_next_date
 
 router = APIRouter()
 
 # When to start surfacing donor matches before the transfusion date
 MATCH_WINDOW_DAYS = 7   # 1 week before
+AUTO_NOTIFY_DAYS = 5    # auto-notify hospital N days before due date
+DONOR_COOLDOWN_DAYS = 56  # days a donor is unavailable after accepting
 
 
 # ── Notification Helper ──────────────────────────────────────────────────────
@@ -135,6 +137,15 @@ def get_thal_patients(hospital_id: Optional[str] = None):
         is_overdue = due_days is not None and due_days < 0
         is_critical = is_overdue and donor_status not in ("accepted", "fulfilled")
 
+        # ── AUTO-NOTIFY: if within AUTO_NOTIFY_DAYS and no donor, alert hospital ─
+        if (
+            due_days is not None
+            and 0 <= due_days <= AUTO_NOTIFY_DAYS
+            and donor_status not in ("pending", "accepted", "fulfilled")
+            and p.get("hospital_id")
+        ):
+            _auto_notify_hospital_if_needed(p["id"], p["name"], p.get("hospital_id"), due_days)
+
         # ── Adaptive prediction info ──────────────────────────────────────
         prediction = _get_prediction_for_patient(p["id"], freq)
 
@@ -211,12 +222,38 @@ def get_thal_matches(patient_id: str):
 
     # 4. Pull all available, verified donors
     donors_res = supabase.table("donors") \
-        .select("id, name, blood_group, city, trust_score, is_verified, lat, lng") \
+        .select("id, name, blood_group, city, trust_score, is_verified, lat, lng, last_donation_date") \
         .eq("is_available", True) \
         .eq("is_verified", True) \
         .execute()
 
     donors = donors_res.data or []
+
+    # 4b. Get hospital location for proximity scoring
+    hospital_lat, hospital_lng = None, None
+    if patient_res.data:
+        hosp_id = None
+        # fetch hospital_id from patient record
+        p_full = supabase.table("thal_patients").select("hospital_id").eq("id", patient_id).single().execute()
+        if p_full.data:
+            hosp_id = p_full.data.get("hospital_id")
+        if hosp_id:
+            h_res = supabase.table("hospitals").select("lat, lng").eq("id", hosp_id).single().execute()
+            if h_res.data:
+                hospital_lat = h_res.data.get("lat")
+                hospital_lng = h_res.data.get("lng")
+
+    # 4c. Count lifetime donations per donor (from matches table)
+    all_thal_matches = supabase.table("matches") \
+        .select("donor_id") \
+        .eq("module", "thal") \
+        .eq("status", "fulfilled") \
+        .execute()
+    lifetime_counts: dict[str, int] = {}
+    for m in (all_thal_matches.data or []):
+        did = m.get("donor_id")
+        if did:
+            lifetime_counts[did] = lifetime_counts.get(did, 0) + 1
 
     # 5. Filter: blood compatible AND not previously used for THIS patient
     eligible = []
@@ -226,6 +263,32 @@ def get_thal_matches(patient_id: str):
             continue                          # ← no-repeat rule
         if not blood_compatible(d.get("blood_group", ""), blood_group):
             continue
+
+        # ── ML Scoring ─────────────────────────────────────────────────
+        score = 0.0
+
+        # Factor 1: Days since last donation (longer gap = higher, max 30 pts)
+        days_gap = days_since(d.get("last_donation_date"))
+        if days_gap is not None:
+            score += min(days_gap / 4.0, 30.0)   # 120+ days → max 30 pts
+        else:
+            score += 20.0   # never donated = good candidate
+
+        # Factor 2: Lifetime donation count (experience, max 20 pts)
+        lifetime = lifetime_counts.get(donor_id, 0)
+        score += min(lifetime * 4.0, 20.0)  # 5+ donations → max 20 pts
+
+        # Factor 3: Trust score (max 30 pts)
+        trust = d.get("trust_score") or 0
+        score += trust * 0.3   # 100 trust → 30 pts
+
+        # Factor 4: Proximity to hospital (max 20 pts, closer = higher)
+        distance_km = None
+        if hospital_lat and hospital_lng and d.get("lat") and d.get("lng"):
+            distance_km = haversine(hospital_lat, hospital_lng, d["lat"], d["lng"])
+            # 0 km → 20 pts, 100+ km → 0 pts
+            score += max(0, 20.0 - (distance_km / 5.0))
+
         eligible.append({
             "donor_id":    donor_id,
             "name":        d["name"],
@@ -233,11 +296,15 @@ def get_thal_matches(patient_id: str):
             "city":        d["city"],
             "trust_score": d.get("trust_score") or 0,
             "is_verified": d.get("is_verified", False),
-            "previously_donated_to_patient": False,   # always False here
+            "previously_donated_to_patient": False,
+            "match_score":      round(score, 1),
+            "days_since_donation": days_gap,
+            "lifetime_donations": lifetime,
+            "distance_km":       distance_km,
         })
 
-    # Sort best trust first
-    eligible.sort(key=lambda x: x["trust_score"], reverse=True)
+    # Sort by ML match_score descending (best candidates first)
+    eligible.sort(key=lambda x: x["match_score"], reverse=True)
 
     return {
         "patient_id":       patient_id,
@@ -247,7 +314,7 @@ def get_thal_matches(patient_id: str):
         "days_until":       due_days,
         "needs_match_now":  due_days is not None and 0 <= due_days <= MATCH_WINDOW_DAYS,
         "early_warning":    early_warning,
-        "excluded_donors":  len(used_donor_ids),      # how many were skipped
+        "excluded_donors":  len(used_donor_ids),
         "matches":          eligible,
     }
 
@@ -725,16 +792,18 @@ def respond_to_assignment(body: ThalRespondBody):
 
     # Get patient and hospital info for notifications
     patient_res = supabase.table("thal_patients") \
-        .select("name, hospital_id") \
+        .select("name, hospital_id, blood_group") \
         .eq("id", match_data["request_id"]) \
         .single() \
         .execute()
 
     patient_name = "a patient"
     hospital_id = None
+    patient_blood = None
     if patient_res.data:
         patient_name = patient_res.data.get("name", "a patient")
         hospital_id = patient_res.data.get("hospital_id")
+        patient_blood = patient_res.data.get("blood_group")
 
     # Get donor name for the hospital notification
     donor_res = supabase.table("donors") \
@@ -746,6 +815,16 @@ def respond_to_assignment(body: ThalRespondBody):
     donor_name = donor_res.data.get("name", "A donor") if donor_res.data else "A donor"
 
     if body.action == "accept":
+        # ── PHASE 3: Donor cooldown — mark unavailable for 56 days ────────
+        try:
+            cooldown_until = (date.today() + timedelta(days=DONOR_COOLDOWN_DAYS)).isoformat()
+            supabase.table("donors").update({
+                "is_available": False,
+                "last_donation_date": date.today().isoformat(),
+            }).eq("id", body.donor_id).execute()
+        except Exception as e:
+            print(f"[thal.respond] Cooldown update failed: {e}")
+
         # Notify hospital
         if hospital_id:
             _notify(
@@ -757,16 +836,28 @@ def respond_to_assignment(body: ThalRespondBody):
             )
         msg = "You've accepted this assignment. The hospital has been notified."
     else:
-        # Notify hospital to reassign
+        # Notify hospital
         if hospital_id:
             _notify(
                 hospital_id,
-                "Donor Declined — Reassign Needed ⚠️",
+                "Donor Declined — Auto-Reassigning ⚠️",
                 f"{donor_name} declined the assignment for {patient_name}. "
-                f"Please find another donor.",
+                f"The system is searching for the next available donor.",
                 ntype="alert",
             )
-        msg = "You've declined this assignment. The hospital will find another donor."
+
+        # ── PHASE 4: Auto-fallback — find and assign next best donor ─────
+        auto_assigned = _auto_assign_next_donor(
+            patient_id=match_data["request_id"],
+            declined_donor_id=body.donor_id,
+            patient_blood=patient_blood,
+            hospital_id=hospital_id,
+            patient_name=patient_name,
+        )
+        if auto_assigned:
+            msg = "You've declined this assignment. The system has auto-assigned another donor."
+        else:
+            msg = "You've declined this assignment. No other eligible donors found — hospital notified."
 
     return {
         "success": True,
@@ -785,6 +876,137 @@ def _calc_age(dob: Optional[str]) -> Optional[int]:
         return (date.today() - d).days // 365
     except Exception:
         return None
+
+
+# ── Phase 2: Auto-notify hospital before due date ────────────────────────────
+
+# Track which patients we've already notified this server session to avoid spam
+_notified_patients: set[str] = set()
+
+def _auto_notify_hospital_if_needed(
+    patient_id: str, patient_name: str, hospital_id: str, days_left: int
+):
+    """Send a one-time notification to the hospital when a patient is within
+    AUTO_NOTIFY_DAYS of their transfusion and has no donor assigned."""
+    cache_key = f"{patient_id}:{date.today().isoformat()}"
+    if cache_key in _notified_patients:
+        return  # already notified today
+
+    # Check if we already sent a thal auto-notify for this patient today
+    existing = supabase.table("notifications") \
+        .select("id") \
+        .eq("user_id", hospital_id) \
+        .eq("module", "thal") \
+        .like("title", "%Upcoming Transfusion%") \
+        .gte("created_at", date.today().isoformat()) \
+        .execute()
+
+    if existing.data:
+        _notified_patients.add(cache_key)
+        return  # already notified via DB
+
+    urgency = "TODAY" if days_left == 0 else f"in {days_left} day(s)"
+    _notify(
+        hospital_id,
+        f"⚠️ Upcoming Transfusion — {patient_name}",
+        f"{patient_name} needs a transfusion {urgency} but has no assigned donor. "
+        f"Please open ThalCare → Find Donor to assign a compatible donor.",
+        ntype="alert",
+    )
+    _notified_patients.add(cache_key)
+
+
+# ── Phase 4: Auto-assign next best donor on decline ──────────────────────────
+
+def _auto_assign_next_donor(
+    patient_id: str,
+    declined_donor_id: str,
+    patient_blood: Optional[str],
+    hospital_id: Optional[str],
+    patient_name: str,
+) -> bool:
+    """Automatically find and assign the next best eligible donor after a decline.
+    Returns True if a new donor was assigned, False if none found."""
+    if not patient_blood:
+        return False
+
+    # 1. Collect all past donor IDs for this patient (including the one who just declined)
+    past_res = supabase.table("matches") \
+        .select("donor_id") \
+        .eq("request_id", patient_id) \
+        .eq("module", "thal") \
+        .execute()
+    used_ids = {row["donor_id"] for row in (past_res.data or []) if row.get("donor_id")}
+
+    # 2. Find available, verified donors with matching blood group
+    donors_res = supabase.table("donors") \
+        .select("id, name, blood_group, trust_score, last_donation_date") \
+        .eq("is_available", True) \
+        .eq("is_verified", True) \
+        .execute()
+
+    candidates = []
+    for d in (donors_res.data or []):
+        if d["id"] in used_ids:
+            continue
+        if not blood_compatible(d.get("blood_group", ""), patient_blood):
+            continue
+        # Simple score: trust + days since donation
+        score = (d.get("trust_score") or 0) * 0.3
+        gap = days_since(d.get("last_donation_date"))
+        if gap is not None:
+            score += min(gap / 4.0, 30.0)
+        else:
+            score += 20.0
+        candidates.append((score, d))
+
+    if not candidates:
+        # No donors available — notify hospital
+        if hospital_id:
+            _notify(
+                hospital_id,
+                "No Donors Available ❌",
+                f"Auto-reassignment failed for {patient_name}. "
+                f"No eligible donors found. Please search manually.",
+                ntype="alert",
+            )
+        return False
+
+    # 3. Pick best candidate
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best = candidates[0][1]
+
+    # 4. Insert match record
+    res = supabase.table("matches").insert({
+        "request_id": patient_id,
+        "donor_id":   best["id"],
+        "module":     "thal",
+        "status":     "pending",
+        "match_score": round(candidates[0][0], 2),
+    }).execute()
+
+    if not res.data:
+        return False
+
+    # 5. Notify the new donor
+    _notify(
+        best["id"],
+        "ThalCare Assignment 💉",
+        f"You've been auto-assigned to donate for {patient_name}. "
+        f"Please confirm or decline in your ThalCare dashboard.",
+    )
+
+    # 6. Notify hospital about auto-reassignment
+    if hospital_id:
+        _notify(
+            hospital_id,
+            "Auto-Reassigned ✅",
+            f"{best['name']} has been automatically assigned to {patient_name} "
+            f"after the previous donor declined.",
+            ntype="success",
+        )
+
+    return True
 
 
 def _collect_transfusion_dates(patient_id: str) -> list[str]:
