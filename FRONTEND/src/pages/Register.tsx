@@ -103,6 +103,7 @@ function DonorRegister() {
       await api.auth.registerDonor({
         first_name: firstName,
         last_name: lastName,
+        mobile,
         aadhaar: aadhaar || undefined,
         dob: dob || undefined,
         gender: gender || undefined,
@@ -116,7 +117,11 @@ function DonorRegister() {
       login("donor", firstName || "Donor", undefined, { donor_types: selected });
       navigate("/dashboard");
     } catch (e: any) {
-      setError(e.message || "Registration failed");
+      let msg = e.message || "Registration failed";
+      if (typeof msg === "object" || msg === "[object Object]") {
+          msg = "Please check all required fields and try again.";
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -464,6 +469,7 @@ function HospitalRegister() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [contactPerson, setContactPerson] = useState("");
+  const [contactMobile, setContactMobile] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -488,13 +494,18 @@ function HospitalRegister() {
         address,
         city,
         contact_person: contactPerson,
+        contact_mobile: contactMobile,
         contact_email: contactEmail,
         password,
       });
       login("hospital", name, orgType as any);
       navigate("/dashboard");
     } catch (e: any) {
-      setError(e.message || "Registration failed");
+      let msg = e.message || "Registration failed";
+      if (typeof msg === "object" || msg === "[object Object]") {
+          msg = "Please check all required fields and try again.";
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -561,7 +572,10 @@ function HospitalRegister() {
           <Label className="font-body font-semibold text-sm">{org.contactLabel}</Label>
           <Input placeholder={org.contactPlaceholder} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} className="h-11 rounded-xl font-body" />
         </div>
-
+        <div className="space-y-1.5">
+          <Label className="font-body font-semibold text-sm">Contact Mobile</Label>
+          <Input type="tel" placeholder="Mobile Number" value={contactMobile} onChange={(e) => setContactMobile(e.target.value)} className="h-11 rounded-xl font-body" />
+        </div>
         <div className="col-span-2 space-y-1.5">
           <Label className="font-body font-semibold text-sm">Official Email</Label>
           <Input type="email" placeholder={org.emailPlaceholder} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="h-11 rounded-xl font-body" />
