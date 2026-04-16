@@ -19,10 +19,14 @@ app = FastAPI(
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+|https://.*\.(vercel|netlify)\.app",
+    allow_origins=[
+        "http://localhost:5173",                        # Vite local dev
+        "http://localhost:3000",                        # fallback local dev
+        "https://lifeforgeconnect.onrender.com",        # Render frontend (prod)
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],     
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
