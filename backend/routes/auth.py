@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from utils.db import supabase
+from utils.db import supabase, supabase_auth
 from utils.sms import send_sms
 
 router = APIRouter()
@@ -76,7 +76,7 @@ class OtpVerifyRequest(BaseModel):
 @router.post("/register/donor")
 def register_donor(req: DonorRegisterRequest):
     try:
-        auth_res = supabase.auth.sign_up({
+        auth_res = supabase_auth.auth.sign_up({
             "email": req.email,
             "password": req.password,
         })
@@ -109,7 +109,7 @@ def register_donor(req: DonorRegisterRequest):
         }).execute()
     except Exception as e:
         try:
-            supabase.auth.admin.delete_user(user_id)
+            supabase_auth.auth.admin.delete_user(user_id)
         except Exception as delete_err:
             print(f"[register_donor] Cleanup failed: {delete_err}")
         err_msg = str(e)
@@ -136,7 +136,7 @@ def register_donor(req: DonorRegisterRequest):
 def register_hospital(req: HospitalRegisterRequest):
     print(f"[register_hospital] Attempting to sign up {req.contact_email}")
     try:
-        auth_res = supabase.auth.sign_up({
+        auth_res = supabase_auth.auth.sign_up({
             "email": req.contact_email,
             "password": req.password,
         })
@@ -170,7 +170,7 @@ def register_hospital(req: HospitalRegisterRequest):
         print(f"[register_hospital] Profile insert failed: {e}")
         if user_id:
             try:
-                supabase.auth.admin.delete_user(user_id)
+                supabase_auth.auth.admin.delete_user(user_id)
                 print(f"[register_hospital] Cleaned up user {user_id}")
             except Exception as delete_err:
                 print(f"[register_hospital] Cleanup failed: {delete_err}")
@@ -194,7 +194,7 @@ def register_hospital(req: HospitalRegisterRequest):
 @router.post("/login")
 def login(req: LoginRequest):
     try:
-        res = supabase.auth.sign_in_with_password({
+        res = supabase_auth.auth.sign_in_with_password({
             "email": req.email,
             "password": req.password,
         })
