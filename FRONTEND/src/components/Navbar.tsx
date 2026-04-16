@@ -110,7 +110,7 @@ export default function Navbar() {
                 <Link to="/login">
                   <Button variant="outline" size="sm" className={`font-body font-semibold border-2 ${scrolled || !isHome
                     ? "border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                    : "border-primary-foreground/60 text-primary-foreground hover:bg-primary-foreground/10"
+                    : "!bg-transparent border-primary-foreground/60 text-primary-foreground hover:bg-primary-foreground/10"
                     }`}>
                     Login
                   </Button>

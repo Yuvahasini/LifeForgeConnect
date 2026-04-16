@@ -180,7 +180,7 @@ export default function Index() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="font-body font-bold text-base px-8 py-6 border-2 border-primary-foreground/60 text-primary-foreground hover:bg-primary-foreground/10 rounded-xl"
+                  className="font-body font-bold text-base px-8 py-6 !bg-transparent border-2 border-primary-foreground/60 text-primary-foreground hover:!bg-primary-foreground/10 rounded-xl"
                 >
                   Register to Donate
                 </Button>
