@@ -422,7 +422,7 @@ export default function MilkBridge() {
         {/* Hero */}
         <div className="bg-gradient-to-br from-milk/90 to-amber-400/60 py-16 px-4">
           <div className="container mx-auto">
-            <Link to="/" className="inline-flex items-center gap-1.5 text-foreground/60 hover:text-foreground font-body text-sm mb-6 transition-colors">
+            <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-foreground/60 hover:text-foreground font-body text-sm mb-6 transition-colors">
               <ArrowLeft className="w-4 h-4" /> Back to Home
             </Link>
             <div className="flex items-center gap-4 mb-4">

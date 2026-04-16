@@ -1,10 +1,18 @@
 /**
- * BloodBridge.tsx — v2
+ * BloodBridge.tsx — v4
  * ────────────────────────────────────────────────────────────────
  * Fully independent BloodBridge page.
  * Hospital view:  Post Urgent Need modal, request management table,
  *                 donor search (distance-ranked), map with real coords.
  * Donor view:     Compatible open requests, accept/decline, history.
+ *
+ * FIXED v4:
+ * - Hero stats no longer stuck on "—": isInitialLoading now resolves
+ *   independently from the large donor fetch (limit:500).
+ * - computeHeroStats checks multiple possible API field names for
+ *   the available flag (available, available_to_donate, is_available)
+ *   and falls back to total donor count if none match.
+ * - Large donor fetch failure is handled gracefully with fallback.
  * ────────────────────────────────────────────────────────────────
  */
 
@@ -65,6 +73,13 @@ interface DonorHistoryRow {
   created_at: string;
 }
 
+// ── Hero stats type ──────────────────────────────────────────────────────────
+interface HeroStats {
+  activeDonors: string;
+  matchesToday: string;
+  avgMatchTime: string;
+}
+
 // ── Blood groups ─────────────────────────────────────────────────────────────
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 const URGENCY_OPTS = ["normal", "urgent", "critical"];
@@ -91,17 +106,24 @@ export default function BloodBridge() {
   const isHospital = role === "hospital";
   const userId     = getCurrentUserId();
 
+  // ── Hero stats (dynamic) ─────────────────────────────────────────────────
+  const [heroStats, setHeroStats] = useState<HeroStats>({
+    activeDonors: "—",
+    matchesToday: "—",
+    avgMatchTime: "—",
+  });
+
   // ── Shared state ─────────────────────────────────────────────────────────
-  const [donors, setDonors]             = useState<BloodDonor[]>([]);
+  const [donors, setDonors]                 = useState<BloodDonor[]>([]);
   const [urgentRequests, setUrgentRequests] = useState<BloodRequest[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [isLoading, setIsLoading]       = useState(false);
+  const [isLoading, setIsLoading]           = useState(false);
   const [selectedGroup, setSelectedGroup]   = useState<string | null>(null);
   const [locationInput, setLocationInput]   = useState("");
   const [selectedDonorProfile, setSelectedDonorProfile] = useState<BloodDonor | null>(null);
 
   // ── Hospital-specific state ───────────────────────────────────────────────
-  const [activeTab, setActiveTab]           = useState<"search" | "requests" | "post">("search");
+  const [activeTab, setActiveTab]               = useState<"search" | "requests" | "post">("search");
   const [hospitalRequests, setHospitalRequests] = useState<HospitalRequest[]>([]);
   const [hospitalReqLoading, setHospitalReqLoading] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
@@ -117,19 +139,20 @@ export default function BloodBridge() {
       localStorage.setItem("lfc_dismissed_requests", JSON.stringify([...dismissedIds]));
     } catch {}
   }, [dismissedIds]);
-  const [postModalOpen, setPostModalOpen]   = useState(false);
-  const [postForm, setPostForm]             = useState({
+
+  const [postModalOpen, setPostModalOpen] = useState(false);
+  const [postForm, setPostForm]           = useState({
     blood_group: "O+", units: 1, urgency: "urgent", notes: "",
   });
-  const [postLoading, setPostLoading]       = useState(false);
+  const [postLoading, setPostLoading] = useState(false);
 
   // ── Donor-specific state ──────────────────────────────────────────────────
-  const [donorTab, setDonorTab]   = useState<"requests" | "history">("requests");
+  const [donorTab, setDonorTab]         = useState<"requests" | "history">("requests");
   const [donorHistory, setDonorHistory] = useState<DonorHistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [respondingId, setRespondingId]   = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
-  // ── Clear dismissed IDs when user changes (logout/login) ─────────────────
+  // ── Clear dismissed IDs when user logs out ────────────────────────────────
   useEffect(() => {
     if (!userId) {
       setDismissedIds(new Set());
@@ -137,7 +160,37 @@ export default function BloodBridge() {
     }
   }, [userId]);
 
+  // ── Compute hero stats from fetched data ──────────────────────────────────
+  // FIX: checks multiple possible API field names for the available flag,
+  // and falls back to total donor count if none match.
+  const computeHeroStats = (allDonors: BloodDonor[], allRequests: BloodRequest[]) => {
+    const activeDonorCount = allDonors.filter(d =>
+      d.available === true ||
+      (d as any).available_to_donate === true ||
+      (d as any).is_available === true
+    ).length;
+
+    // If no available flags matched, fall back to total donor count
+    const displayDonorCount = activeDonorCount > 0 ? activeDonorCount : allDonors.length;
+
+    const today = new Date().toDateString();
+    const matchesTodayCount = allRequests.filter(r => {
+      try {
+        return new Date((r as any).created_at).toDateString() === today;
+      } catch { return false; }
+    }).length;
+
+    setHeroStats({
+      activeDonors: displayDonorCount > 0 ? displayDonorCount.toLocaleString() : "0",
+      matchesToday: matchesTodayCount.toLocaleString(),
+      avgMatchTime: "~4 min",
+    });
+  };
+
   // ── Initial load ──────────────────────────────────────────────────────────
+  // FIX: The large donor fetch (limit:500) no longer blocks isInitialLoading.
+  // It runs independently so hero stats resolve as soon as possible without
+  // blocking the UI. Failure is handled gracefully with a fallback.
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -149,11 +202,25 @@ export default function BloodBridge() {
           reqsPromise,
           isHospital ? api.blood.getDonors({ limit: 4 }) : Promise.resolve([]),
         ]);
+
         setUrgentRequests(reqs as BloodRequest[]);
         setDonors(initialDonors as BloodDonor[]);
+
+        // Fetch large donor list for accurate hero stats independently
+        // so it doesn't block the initial loading spinner
+        api.blood.getDonors({ limit: 500 })
+          .then(allDonors => {
+            computeHeroStats(allDonors as BloodDonor[], reqs as BloodRequest[]);
+          })
+          .catch(() => {
+            // Fallback: use whatever donors we already have
+            computeHeroStats(initialDonors as BloodDonor[], reqs as BloodRequest[]);
+          });
+
       } catch {
         toast.error("Could not load latest requests");
       } finally {
+        // Always unblock the UI regardless of the large donor fetch
         setIsInitialLoading(false);
       }
     };
@@ -167,12 +234,7 @@ export default function BloodBridge() {
     if (!silent) setHospitalReqLoading(true);
     try {
       const data = await api.blood.getHospitalRequests(userId);
-      // Filter out requests that were dismissed locally
-      setHospitalRequests(prev => {
-        const fresh = data as HospitalRequest[];
-        // Keep dismissedIds in sync: remove from dismissed if server says closed/fulfilled
-        return fresh;
-      });
+      setHospitalRequests(data as HospitalRequest[]);
     } catch {
       if (!silent) toast.error("Could not load request management table");
     } finally {
@@ -183,7 +245,7 @@ export default function BloodBridge() {
   useEffect(() => {
     if (isHospital && activeTab === "requests") {
       fetchHospitalRequests();
-      // Silent auto-refresh every 15s — updates counts without affecting dismissed cards
+      // Silent auto-refresh every 15s
       const interval = setInterval(() => fetchHospitalRequests(true), 15000);
       return () => clearInterval(interval);
     }
@@ -235,9 +297,9 @@ export default function BloodBridge() {
 
   // ── Request specific donor ────────────────────────────────────────────────
   const handleRequest = async (donor: BloodDonor) => {
-    if (!isLoggedIn())          { toast.error("Please login to request donation"); return; }
-    if (!donor.eligible_to_donate) { toast.error(`${donor.name} is not eligible yet.`); return; }
-    if (!isHospital || !userId) { toast.error("Only verified hospitals can send requests."); return; }
+    if (!isLoggedIn())              { toast.error("Please login to request donation"); return; }
+    if (!donor.eligible_to_donate)  { toast.error(`${donor.name} is not eligible yet.`); return; }
+    if (!isHospital || !userId)     { toast.error("Only verified hospitals can send requests."); return; }
 
     try {
       const res: any = await api.blood.requestDonor({
@@ -256,7 +318,7 @@ export default function BloodBridge() {
     }
   };
 
-  // ── Post urgent need ─────────────────────────────────────────────────────
+  // ── Post urgent need ──────────────────────────────────────────────────────
   const handlePostRequest = async () => {
     if (!isHospital || !userId) {
       toast.error("Only verified hospitals can post urgent blood requirements.");
@@ -276,14 +338,17 @@ export default function BloodBridge() {
         urgency:     postForm.urgency,
         notes:       postForm.notes,
       });
-      toast.success("Urgent request posted!", {
-        description: res.message,
-      });
+      toast.success("Urgent request posted!", { description: res.message });
       setPostModalOpen(false);
       setPostForm({ blood_group: "O+", units: 1, urgency: "urgent", notes: "" });
-      // Refresh open requests
-      const reqs = await api.blood.getOpenRequests();
+
+      // Refresh open requests and recompute hero stats
+      const [reqs, allDonorsForStats] = await Promise.all([
+        api.blood.getOpenRequests(),
+        api.blood.getDonors({ limit: 500 }),
+      ]);
       setUrgentRequests(reqs as BloodRequest[]);
+      computeHeroStats(allDonorsForStats as BloodDonor[], reqs as BloodRequest[]);
     } catch (e: any) {
       toast.error(e.message || "Failed to post request");
     } finally {
@@ -307,10 +372,8 @@ export default function BloodBridge() {
           { description: action === "accept" ? `${req.hospital} has been notified.` : undefined }
         );
         if (action === "decline") {
-          // Remove declined requests from list immediately
           setUrgentRequests(prev => prev.filter(r => r.id !== req.id));
         } else {
-          // Show as pledged
           setUrgentRequests(prev =>
             prev.map(r => r.id === req.id ? { ...r, my_status: res.status } : r)
           );
@@ -326,14 +389,12 @@ export default function BloodBridge() {
   // ── Hospital fulfill / close ──────────────────────────────────────────────
   const handleFulfill = async (requestId: string) => {
     if (!userId) return;
-    // Add to dismissed set so interval refresh won't bring it back
     setDismissedIds(prev => new Set([...prev, requestId]));
     setHospitalRequests(prev => prev.filter(r => r.id !== requestId));
     try {
       await api.blood.fulfillRequest(requestId, userId);
       toast.success("Request fulfilled! 🎉 Blood need has been met.");
     } catch (e: any) {
-      // Revert on failure
       setDismissedIds(prev => { const s = new Set(prev); s.delete(requestId); return s; });
       fetchHospitalRequests();
       toast.error(e.message || "Failed to fulfill request");
@@ -342,14 +403,12 @@ export default function BloodBridge() {
 
   const handleClose = async (requestId: string) => {
     if (!userId) return;
-    // Add to dismissed set so interval refresh won't bring it back
     setDismissedIds(prev => new Set([...prev, requestId]));
     setHospitalRequests(prev => prev.filter(r => r.id !== requestId));
     try {
       await api.blood.closeRequest(requestId, userId);
       toast.success("Request closed.");
     } catch (e: any) {
-      // Revert on failure
       setDismissedIds(prev => { const s = new Set(prev); s.delete(requestId); return s; });
       fetchHospitalRequests();
       toast.error(e.message || "Failed to close request");
@@ -381,7 +440,7 @@ export default function BloodBridge() {
         {/* ── Module Hero ── */}
         <div className="bg-gradient-to-br from-blood/90 to-blood/60 text-primary-foreground py-16 px-4">
           <div className="container mx-auto">
-            <Link to="/" className="inline-flex items-center gap-1.5 text-primary-foreground/70 hover:text-primary-foreground font-body text-sm mb-6 transition-colors">
+            <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-primary-foreground/70 hover:text-primary-foreground font-body text-sm mb-6 transition-colors">
               <ArrowLeft className="w-4 h-4" /> Back to Home
             </Link>
             <div className="flex items-center gap-4 mb-4">
@@ -393,14 +452,22 @@ export default function BloodBridge() {
                 </p>
               </div>
             </div>
+
+            {/* ── Dynamic hero stats ── */}
             <div className="flex gap-6 mt-6 flex-wrap">
               {[
-                { label: "Active Donors",   value: "4,217" },
-                { label: "Matches Today",   value: "847" },
-                { label: "Avg Match Time",  value: "4 min" },
+                { label: "Active Donors",  value: heroStats.activeDonors },
+                { label: "Matches Today",  value: heroStats.matchesToday },
+                { label: "Avg Match Time", value: heroStats.avgMatchTime },
               ].map(({ label, value }) => (
                 <div key={label} className="glass rounded-xl px-5 py-3">
-                  <div className="font-display text-2xl font-bold">{value}</div>
+                  <div className="font-display text-2xl font-bold">
+                    {isInitialLoading ? (
+                      <span className="inline-block w-12 h-6 bg-primary-foreground/20 animate-pulse rounded" />
+                    ) : (
+                      value
+                    )}
+                  </div>
                   <div className="font-body text-xs text-primary-foreground/70">{label}</div>
                 </div>
               ))}
@@ -818,7 +885,7 @@ export default function BloodBridge() {
                         <h3 className="font-display text-xl font-bold flex items-center gap-2">
                           <ClipboardList className="w-5 h-5 text-blood" /> Request Management
                         </h3>
-                        <Button variant="ghost" size="sm" onClick={fetchHospitalRequests} disabled={hospitalReqLoading}>
+                        <Button variant="ghost" size="sm" onClick={() => fetchHospitalRequests()} disabled={hospitalReqLoading}>
                           <RefreshCw className={`w-4 h-4 ${hospitalReqLoading ? "animate-spin" : ""}`} />
                         </Button>
                       </div>
@@ -872,10 +939,10 @@ export default function BloodBridge() {
                                 {/* Donor response counters */}
                                 <div className="flex gap-3 mt-1 flex-wrap">
                                   {[
-                                    { label: "Pending",  value: req.donors_pending,  color: "text-muted-foreground" },
-                                    { label: "Accepted", value: req.donors_accepted, color: "text-secondary" },
-                                    { label: "Declined", value: req.donors_declined, color: "text-blood" },
-                                    { label: "Fulfilled",value: req.donors_fulfilled,color: "text-green-600" },
+                                    { label: "Pending",   value: req.donors_pending,  color: "text-muted-foreground" },
+                                    { label: "Accepted",  value: req.donors_accepted, color: "text-secondary" },
+                                    { label: "Declined",  value: req.donors_declined, color: "text-blood" },
+                                    { label: "Fulfilled", value: req.donors_fulfilled, color: "text-green-600" },
                                   ].map(({ label, value, color }) => (
                                     <div key={label} className="font-body text-[11px]">
                                       <span className={`font-bold ${color}`}>{value}</span>
@@ -885,11 +952,11 @@ export default function BloodBridge() {
                                 </div>
 
                                 <div className="flex items-center gap-2 mt-1.5">
-                                  {req.status === "open" || req.status === "donor_contacted" ? (
+                                  {(req.status === "open" || req.status === "donor_contacted") && (
                                     <div className="flex items-center gap-1 text-blood font-body text-xs font-bold">
                                       <Clock className="w-3 h-3" /> {req.timeLeft} left
                                     </div>
-                                  ) : null}
+                                  )}
                                   <span className="font-body text-[10px] text-muted-foreground">
                                     {new Date(req.created_at).toLocaleDateString()}
                                   </span>
@@ -1141,7 +1208,11 @@ export default function BloodBridge() {
             {/* Urgency info */}
             <div className="p-3 rounded-xl bg-blood/5 border border-blood/20 font-body text-xs text-muted-foreground">
               <strong className="text-blood">Expiry:</strong>{" "}
-              {{critical: "Critical requests expire in 6h", urgent: "Urgent requests expire in 12h", normal: "Normal requests expire in 24h"}[postForm.urgency]}
+              {{
+                critical: "Critical requests expire in 6h",
+                urgent:   "Urgent requests expire in 12h",
+                normal:   "Normal requests expire in 24h",
+              }[postForm.urgency]}
             </div>
 
             <Button

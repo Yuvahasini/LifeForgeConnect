@@ -826,7 +826,7 @@ export default function ThalCare() {
         <div className="bg-gradient-to-br from-thal/90 to-thal/50 text-primary-foreground py-16 px-4">
           <div className="container mx-auto">
             <Link
-              to="/"
+              to="/dashboard"
               className="inline-flex items-center gap-1.5 text-primary-foreground/70 hover:text-primary-foreground font-body text-sm mb-6 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" /> Back

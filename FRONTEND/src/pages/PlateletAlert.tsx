@@ -495,7 +495,7 @@ export default function PlateletAlert() {
             <div className="absolute bottom-0 left-10 w-48 h-48 rounded-full bg-orange-300/30 blur-2xl" />
           </div>
           <div className="container mx-auto px-4 py-14 relative">
-            <Link to="/" className="inline-flex items-center gap-1.5 text-white/70 hover:text-white font-body text-sm mb-6 transition-colors">
+            <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-white/70 hover:text-white font-body text-sm mb-6 transition-colors">
               <ArrowLeft className="w-4 h-4" /> Back
             </Link>
             <div className="flex items-center gap-4 mb-6">
