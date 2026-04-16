@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Calendar, Clock, Plus, ChevronRight,
   X, UserCheck, AlertTriangle, CheckCircle, Loader2, RefreshCw,
-  History, Heart, ShieldCheck, XCircle, Activity, Users,
+  History, Heart, ShieldCheck, XCircle, Activity, Users, MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import BloodBridgeMap from "@/components/BloodBridgeMap";
 import { useAuth } from "@/hooks/AuthContext";
 import {
   api, getCurrentUserId, getCurrentRole,
   type ThalPatient, type CalendarDay, type ThalAssignment, type ThalPatientHistory, type ThalDashboardStats,
+  type BloodDonor,
 } from "@/lib/api";
 
 // ── Extended type (backward compat) ───────────────────────────────────────────
@@ -715,7 +717,7 @@ function DonorAssignments({ onRefresh }: { onRefresh: () => void }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ThalCare() {
-  const { role } = useAuth();
+  const { role, userName, profile } = useAuth();
   const userId = getCurrentUserId();
   const currentRole = getCurrentRole();
   const isHospital = currentRole === "hospital";
@@ -726,6 +728,9 @@ export default function ThalCare() {
   const [dashStats, setDashStats] = useState<ThalDashboardStats | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [errorData, setErrorData] = useState(false);
+
+  // Nearby Donors Map state (hospital only)
+  const [mapDonors, setMapDonors] = useState<BloodDonor[]>([]);
 
   const [showRegister, setShowRegister] = useState(false);
   const [findDonorFor, setFindDonorFor] = useState<ThalPatientExt | null>(null);
@@ -755,6 +760,30 @@ export default function ThalCare() {
   }
 
   useEffect(() => { fetchData(); }, []);
+
+  // ── Fetch blood-type donors for Nearby Donors Map (hospital only) ──
+  useEffect(() => {
+    if (!isHospital) return;
+    api.blood.getDonors({ limit: 50 }).then((donors) => {
+      setMapDonors(donors as BloodDonor[]);
+    }).catch(() => {});
+  }, [isHospital]);
+
+  // Map data — identical logic to BloodBridge
+  const mapDonorPins = mapDonors.map(d => ({
+    id:           d.id,
+    name:         d.name,
+    blood_group:  d.group,
+    city:         d.city,
+    trust_score:  d.trust_score,
+    distance_km:  d.distance_km || 0,
+    lat:          (d as any).lat ?? 0,
+    lng:          (d as any).lng ?? 0,
+  }));
+
+  const hospitalLocation = isHospital && profile?.lat && profile?.lng
+    ? { lat: profile.lat, lng: profile.lng, name: userName || "Your Hospital" }
+    : null;
 
   // Compute filtered patients
   const filteredPatients = patients.filter(p => {
@@ -1133,6 +1162,21 @@ export default function ThalCare() {
               </div>
             </div>
           </div>
+
+          {/* ── Nearby Donors Map (hospital only) ── */}
+          {isHospital && (
+            <div className="mt-10">
+              <h3 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-thal" /> Nearby Blood Donors
+              </h3>
+              <p className="font-body text-sm text-muted-foreground mb-4">
+                Blood-eligible donors near your hospital — click a pin to view details.
+              </p>
+              <div className="rounded-2xl border-2 border-thal/20 bg-card shadow-card overflow-hidden">
+                <BloodBridgeMap donors={mapDonorPins} hospitalLocation={hospitalLocation} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <Footer />
